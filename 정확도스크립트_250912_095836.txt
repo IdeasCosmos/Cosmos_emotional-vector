@@ -1,0 +1,715 @@
+#!/usr/bin/env python3
+"""
+정확도 검증 테스트 스크립트
+1. 음성통화 처리 및 사용자 채점 시스템
+2. 시 분석 및 기존 시스템 비교
+"""
+
+import numpy as np
+import pandas as pd
+import speech_recognition as sr
+import soundfile as sf
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import json
+import time
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import threading
+
+# 위에서 정의한 감정 분석 시스템 import
+# from enhanced_emotion_engine import IntegratedEmotionAnalysisSystem
+
+# =============================================================================
+# 1. 음성통화 감정 분석 테스트 시스템
+# =============================================================================
+
+@dataclass
+class AudioAnalysisResult:
+    """음성 분석 결과 데이터 클래스"""
+    audio_file: str
+    transcribed_text: str
+    emotion_vector: np.ndarray
+    processing_time: float
+    confidence_score: float
+    user_rating: Optional[int] = None
+    user_feedback: Optional[str] = None
+
+class VoiceEmotionTestSystem:
+    """
+    음성통화 감정 분석 테스트 시스템
+    - 음성 파일 처리
+    - 텍스트 변환
+    - 감정 분석
+    - 사용자 채점 인터페이스
+    """
+    
+    def __init__(self, emotion_system):
+        self.emotion_system = emotion_system
+        self.recognizer = sr.Recognizer()
+        self.test_results = []
+        
+        # 지원하는 오디오 형식
+        self.supported_formats = ['.wav', '.flac', '.aiff', '.mp3', '.ogg']
+        
+    def process_audio_file(self, audio_path: str, language: str = 'ko-KR') -> AudioAnalysisResult:
+        """오디오 파일 전체 처리 파이프라인"""
+        
+        print(f"\n{'='*20} 음성 파일 처리 시작 {'='*20}")
+        print(f"파일: {audio_path}")
+        
+        start_time = time.time()
+        
+        try:
+            # 1. 음성을 텍스트로 변환
+            print("1. 음성 → 텍스트 변환 중...")
+            transcribed_text = self._speech_to_text(audio_path, language)
+            print(f"   변환된 텍스트: {transcribed_text}")
+            
+            # 2. 감정 분석 실행
+            print("2. 감정 분석 실행 중...")
+            emotion_analysis = self.emotion_system.analyze_emotion(transcribed_text)
+            emotion_vector = np.array(emotion_analysis['emotion_vector_28d'])
+            confidence = np.mean(emotion_analysis['confidence_scores'])
+            
+            processing_time = time.time() - start_time
+            
+            # 3. 결과 객체 생성
+            result = AudioAnalysisResult(
+                audio_file=audio_path,
+                transcribed_text=transcribed_text,
+                emotion_vector=emotion_vector,
+                processing_time=processing_time,
+                confidence_score=confidence
+            )
+            
+            print(f"3. 처리 완료 (소요시간: {processing_time:.2f}초)")
+            print(f"   신뢰도: {confidence:.3f}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"오류 발생: {e}")
+            # 빈 결과 반환
+            return AudioAnalysisResult(
+                audio_file=audio_path,
+                transcribed_text="[변환 실패]",
+                emotion_vector=np.zeros(28),
+                processing_time=time.time() - start_time,
+                confidence_score=0.0
+            )
+    
+    def _speech_to_text(self, audio_path: str, language: str) -> str:
+        """음성을 텍스트로 변환"""
+        
+        try:
+            # 오디오 파일 로드
+            with sr.AudioFile(audio_path) as source:
+                # 주변 소음 제거
+                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                # 오디오 데이터 캡처
+                audio_data = self.recognizer.record(source)
+            
+            # Google Speech Recognition API 사용
+            text = self.recognizer.recognize_google(audio_data, language=language)
+            
+            return text
+            
+        except sr.UnknownValueError:
+            return "[음성 인식 불가]"
+        except sr.RequestError as e:
+            return f"[API 오류: {e}]"
+        except Exception as e:
+            return f"[처리 오류: {e}]"
+    
+    def create_user_rating_interface(self, result: AudioAnalysisResult) -> Dict:
+        """사용자 채점 인터페이스 생성"""
+        
+        user_feedback = {}
+        
+        def submit_rating():
+            try:
+                # 점수 수집
+                accuracy_rating = accuracy_scale.get()
+                emotion_rating = emotion_scale.get()
+                
+                # 감정 선택 수집
+                selected_emotions = []
+                for emotion, var in emotion_vars.items():
+                    if var.get():
+                        selected_emotions.append(emotion)
+                
+                # 텍스트 피드백 수집
+                feedback_text = feedback_entry.get("1.0", tk.END).strip()
+                
+                user_feedback.update({
+                    'accuracy_rating': accuracy_rating,
+                    'emotion_appropriateness': emotion_rating,
+                    'correct_emotions': selected_emotions,
+                    'feedback_text': feedback_text,
+                    'transcription_correct': transcription_var.get()
+                })
+                
+                root.quit()
+                root.destroy()
+                
+            except Exception as e:
+                messagebox.showerror("오류", f"평가 제출 중 오류: {e}")
+        
+        # GUI 생성
+        root = tk.Tk()
+        root.title("음성 감정 분석 결과 평가")
+        root.geometry("800x700")
+        
+        # 메인 프레임
+        main_frame = ttk.Frame(root, padding="10")
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # 1. 분석 결과 표시
+        result_frame = ttk.LabelFrame(main_frame, text="분석 결과", padding="10")
+        result_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(result_frame, text=f"오디오 파일: {Path(result.audio_file).name}").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(result_frame, text=f"변환된 텍스트: {result.transcribed_text}").grid(row=1, column=0, sticky=tk.W)
+        ttk.Label(result_frame, text=f"처리 시간: {result.processing_time:.2f}초").grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(result_frame, text=f"시스템 신뢰도: {result.confidence_score:.3f}").grid(row=3, column=0, sticky=tk.W)
+        
+        # 2. 텍스트 변환 정확도 평가
+        transcription_frame = ttk.LabelFrame(main_frame, text="텍스트 변환 평가", padding="10")
+        transcription_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        transcription_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(transcription_frame, text="텍스트 변환이 정확함", variable=transcription_var).grid(row=0, column=0, sticky=tk.W)
+        
+        # 3. 감정 분석 정확도 평가
+        accuracy_frame = ttk.LabelFrame(main_frame, text="감정 분석 정확도 (1-10점)", padding="10")
+        accuracy_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(accuracy_frame, text="전체적인 감정 분석 정확도:").grid(row=0, column=0, sticky=tk.W)
+        accuracy_scale = tk.Scale(accuracy_frame, from_=1, to=10, orient=tk.HORIZONTAL)
+        accuracy_scale.set(5)
+        accuracy_scale.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        
+        # 4. 감정 적절성 평가
+        emotion_frame = ttk.LabelFrame(main_frame, text="감정 표현 적절성 (1-10점)", padding="10")
+        emotion_frame.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        ttk.Label(emotion_frame, text="감정 벡터의 적절성:").grid(row=0, column=0, sticky=tk.W)
+        emotion_scale = tk.Scale(emotion_frame, from_=1, to=10, orient=tk.HORIZONTAL)
+        emotion_scale.set(5)
+        emotion_scale.grid(row=1, column=0, sticky=(tk.W, tk.E))
+        
+        # 5. 올바른 감정 선택
+        correct_emotion_frame = ttk.LabelFrame(main_frame, text="실제 감정 선택 (복수 선택 가능)", padding="10")
+        correct_emotion_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        emotions = ['기쁨', '슬픔', '분노', '두려움', '놀람', '혐오', '중립', '복합감정', '그리움', '아련함', '뿌듯함']
+        emotion_vars = {}
+        
+        for i, emotion in enumerate(emotions):
+            var = tk.BooleanVar()
+            emotion_vars[emotion] = var
+            ttk.Checkbutton(correct_emotion_frame, text=emotion, variable=var).grid(row=i//4, column=i%4, sticky=tk.W, padx=5)
+        
+        # 6. 자유 피드백
+        feedback_frame = ttk.LabelFrame(main_frame, text="추가 피드백", padding="10")
+        feedback_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        
+        ttk.Label(feedback_frame, text="개선점이나 추가 의견:").grid(row=0, column=0, sticky=tk.W)
+        feedback_entry = tk.Text(feedback_frame, height=4, width=60)
+        feedback_entry.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        
+        # 7. 제출 버튼
+        submit_btn = ttk.Button(main_frame, text="평가 제출", command=submit_rating)
+        submit_btn.grid(row=5, column=0, columnspan=2, pady=10)
+        
+        # GUI 실행
+        root.mainloop()
+        
+        return user_feedback
+    
+    def run_audio_test_batch(self, audio_directory: str) -> List[AudioAnalysisResult]:
+        """여러 오디오 파일 배치 처리"""
+        
+        audio_dir = Path(audio_directory)
+        audio_files = []
+        
+        # 지원되는 오디오 파일 찾기
+        for format_ext in self.supported_formats:
+            audio_files.extend(audio_dir.glob(f"*{format_ext}"))
+        
+        print(f"\n총 {len(audio_files)}개의 오디오 파일 발견")
+        
+        results = []
+        for i, audio_file in enumerate(audio_files, 1):
+            print(f"\n[{i}/{len(audio_files)}] 처리 중: {audio_file.name}")
+            
+            # 오디오 파일 처리
+            result = self.process_audio_file(str(audio_file))
+            
+            # 사용자 평가 받기
+            print("사용자 평가를 기다리는 중...")
+            user_feedback = self.create_user_rating_interface(result)
+            
+            # 피드백 추가
+            result.user_rating = user_feedback.get('accuracy_rating', 0)
+            result.user_feedback = user_feedback
+            
+            results.append(result)
+            
+            # 중간 저장
+            self._save_partial_results(results, audio_directory)
+        
+        print(f"\n모든 오디오 파일 처리 완료!")
+        return results
+    
+    def _save_partial_results(self, results: List[AudioAnalysisResult], output_dir: str):
+        """중간 결과 저장"""
+        
+        output_path = Path(output_dir) / "audio_test_results.json"
+        
+        results_data = []
+        for result in results:
+            results_data.append({
+                'audio_file': result.audio_file,
+                'transcribed_text': result.transcribed_text,
+                'emotion_vector': result.emotion_vector.tolist(),
+                'processing_time': result.processing_time,
+                'confidence_score': result.confidence_score,
+                'user_rating': result.user_rating,
+                'user_feedback': result.user_feedback
+            })
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(results_data, f, ensure_ascii=False, indent=2)
+        
+        print(f"중간 결과 저장: {output_path}")
+
+# =============================================================================
+# 2. 시 분석 및 기존 시스템 비교 테스트
+# =============================================================================
+
+class PoetryAnalysisComparison:
+    """
+    시 분석 및 기존 시스템 비교 테스트
+    - 시 감정 분석
+    - 기존 시스템과 결과 비교
+    - 성능 지표 계산
+    """
+    
+    def __init__(self, emotion_system, baseline_systems: Optional[Dict] = None):
+        self.emotion_system = emotion_system
+        self.baseline_systems = baseline_systems or {}
+        self.poetry_results = []
+        
+        # 테스트용 시 모음
+        self.test_poems = self._load_test_poems()
+        
+    def _load_test_poems(self) -> List[Dict]:
+        """테스트용 시 데이터 로드"""
+        
+        return [
+            {
+                'title': '진달래꽃',
+                'author': '김소월',
+                'text': '''나 보기가 역겨워
+가실 때에는
+말없이 고이 보내 드리우리다
+
+영변에 약산
+진달래꽃
+아름 따다 가실 길에 뿌리우리다
+
+가시는 걸음걸음
+놓인 그 꽃을
+사뿐히 즈려밟고 가시옵소서
+
+나 보기가 역겨워
+가실 때에는
+죽어도 아니 눈물 흘리우리다''',
+                'expected_emotions': ['슬픔', '사랑', '이별', '체념'],
+                'complexity_level': 'high'
+            },
+            {
+                'title': '님의 침묵',
+                'author': '한용운', 
+                'text': '''님은 갔습니다. 아아, 사랑하는 나의 님은 갔습니다.
+푸른 산빛을 깨뜨리며 단풍잎 같은 사랑을 차고
+정든 님은 갔습니다.
+
+황금의 꽃같이 굳고 빛나던 옛 맹세는 차디찬 티끌이 되어서
+한숨의 미풍에 날아갔습니다.
+
+날카로운 첫 키스의 추억은 나의 운명의 지침을 돌려 놓고,
+뒷걸음쳐서 사라졌습니다.''',
+                'expected_emotions': ['그리움', '슬픔', '사랑', '상실감'],
+                'complexity_level': 'high'
+            },
+            {
+                'title': '엄마야 누나야',
+                'author': '김소월',
+                'text': '''엄마야 누나야 강변 살자.
+들에는 반짝이는 금모래빛
+물에는 연꽃이 떠 있고,
+우리가 놀던 그 강변 살자.
+
+엄마야 누나야 강변 살자.
+꽃은 좋을대로 피어 있고,
+뻐꾸기는 애타게 울어 예쁘다.
+우리가 놀던 그 강변 살자.''',
+                'expected_emotions': ['그리움', '향수', '평온', '그리움'],
+                'complexity_level': 'medium'
+            },
+            {
+                'title': '청포도',
+                'author': '이육사',
+                'text': '''내 고장 칠월은
+청포도가 익어 가는 시절
+
+이 마을 전설이 주저리주저리 열리고
+먼 데 하늘이 꿈꾸며 알알이 들어와 박혀
+
+하늘 밑 푸른 바다가 가슴을 열고
+흰 돛단배가 곱게 밀려서 오면
+
+는 백조처럼 목이 길어서 되고
+차마 떨치지 못할 하나의 인연인 양 
+가슴에 조으는 그리움이 있다''',
+                'expected_emotions': ['그리움', '향수', '희망', '아련함'],
+                'complexity_level': 'high'
+            }
+        ]
+    
+    def analyze_poem_comprehensive(self, poem_data: Dict) -> Dict:
+        """시에 대한 종합적 분석"""
+        
+        print(f"\n{'='*20} 시 분석: {poem_data['title']} {'='*20}")
+        
+        # 1. 우리 시스템으로 분석
+        our_analysis = self.emotion_system.analyze_emotion(poem_data['text'])
+        
+        # 2. 기존 시스템들과 비교 (있는 경우)
+        baseline_results = {}
+        for system_name, system in self.baseline_systems.items():
+            try:
+                baseline_results[system_name] = system.analyze(poem_data['text'])
+            except Exception as e:
+                print(f"기존 시스템 {system_name} 분석 실패: {e}")
+                baseline_results[system_name] = None
+        
+        # 3. 감정 매칭 점수 계산
+        emotion_match_score = self._calculate_emotion_match_score(
+            our_analysis, poem_data['expected_emotions']
+        )
+        
+        # 4. 복잡도 적절성 평가
+        complexity_score = self._evaluate_complexity_appropriateness(
+            our_analysis, poem_data['complexity_level']
+        )
+        
+        result = {
+            'poem_info': poem_data,
+            'our_analysis': our_analysis,
+            'baseline_results': baseline_results,
+            'evaluation_scores': {
+                'emotion_match_score': emotion_match_score,
+                'complexity_score': complexity_score,
+                'overall_score': (emotion_match_score + complexity_score) / 2
+            },
+            'analysis_timestamp': time.time()
+        }
+        
+        self.poetry_results.append(result)
+        
+        return result
+    
+    def _calculate_emotion_match_score(self, analysis_result: Dict, expected_emotions: List[str]) -> float:
+        """예상 감정과의 매칭 점수 계산"""
+        
+        emotion_vector = np.array(analysis_result['emotion_vector_28d'])
+        
+        # 감정 벡터에서 주요 감정 추출 (상위 몇 개 차원의 값 기반)
+        top_emotion_indices = np.argsort(np.abs(emotion_vector))[-5:]  # 상위 5개
+        
+        # 간단한 매칭 로직 (실제로는 더 정교한 매핑 필요)
+        emotion_mapping = {
+            '슬픔': [0, 1, 7],     # 전체 톤, 단어 감정가, 최종 감정 상태
+            '그리움': [2, 10, 14],  # 형태소 강도, 문화적 뉘앙스, 모호성
+            '사랑': [8, 11],       # 각성 수준, 정중함
+            '기쁨': [1, 8, 9],     # 단어 감정가, 각성, 복잡성
+            '향수': [10, 14, 15],  # 문화적 뉘앙스, 모호성, 컨텍스트 의존성
+            '아련함': [14, 15, 26] # 모호성, 컨텍스트 의존성, 불확실성
+        }
+        
+        match_score = 0.0
+        for expected_emotion in expected_emotions:
+            if expected_emotion in emotion_mapping:
+                relevant_dims = emotion_mapping[expected_emotion]
+                avg_intensity = np.mean([abs(emotion_vector[i]) for i in relevant_dims])
+                match_score += avg_intensity
+        
+        return min(match_score / len(expected_emotions), 1.0)
+    
+    def _evaluate_complexity_appropriateness(self, analysis_result: Dict, expected_complexity: str) -> float:
+        """복잡도 적절성 평가"""
+        
+        emotion_vector = np.array(analysis_result['emotion_vector_28d'])
+        
+        # 복잡도 관련 차원들 (9-16차원 주로)
+        complexity_dims = [9, 10, 13, 14, 15]  # 감정복잡도, 문화적뉘앙스, 정교함, 모호성, 컨텍스트의존성
+        measured_complexity = np.mean([emotion_vector[i] for i in complexity_dims])
+        
+        # 예상 복잡도와 비교
+        complexity_targets = {
+            'low': 0.3,
+            'medium': 0.6,
+            'high': 0.9
+        }
+        
+        target_complexity = complexity_targets.get(expected_complexity, 0.6)
+        complexity_diff = abs(measured_complexity - target_complexity)
+        
+        # 차이가 적을수록 높은 점수
+        return max(0, 1.0 - complexity_diff * 2)
+    
+    def run_poetry_comparison_test(self) -> Dict:
+        """시 비교 테스트 실행"""
+        
+        print(f"\n{'='*20} 시 분석 비교 테스트 시작 {'='*20}")
+        
+        all_results = []
+        
+        for poem in self.test_poems:
+            result = self.analyze_poem_comprehensive(poem)
+            all_results.append(result)
+            
+            # 결과 출력
+            self._print_poem_analysis_result(result)
+        
+        # 전체 성능 요약
+        summary = self._calculate_overall_performance(all_results)
+        
+        return {
+            'individual_results': all_results,
+            'performance_summary': summary,
+            'test_metadata': {
+                'total_poems_tested': len(self.test_poems),
+                'baseline_systems_used': list(self.baseline_systems.keys()),
+                'test_timestamp': time.time()
+            }
+        }
+    
+    def _print_poem_analysis_result(self, result: Dict):
+        """시 분석 결과 출력"""
+        
+        poem_info = result['poem_info']
+        scores = result['evaluation_scores']
+        
+        print(f"\n📝 {poem_info['title']} - {poem_info['author']}")
+        print(f"   예상 감정: {', '.join(poem_info['expected_emotions'])}")
+        print(f"   예상 복잡도: {poem_info['complexity_level']}")
+        print(f"   📊 평가 점수:")
+        print(f"     - 감정 매칭: {scores['emotion_match_score']:.3f}")
+        print(f"     - 복잡도 적절성: {scores['complexity_score']:.3f}")
+        print(f"     - 전체 점수: {scores['overall_score']:.3f}")
+        
+        # 감정 벡터 요약
+        our_vector = np.array(result['our_analysis']['emotion_vector_28d'])
+        print(f"   🎯 주요 특성:")
+        print(f"     - 전체 감정 톤: {our_vector[0]:.3f}")
+        print(f"     - 감정 복잡도: {our_vector[9]:.3f}")
+        print(f"     - 문화적 뉘앙스: {our_vector[10]:.3f}")
+        print(f"     - 감정 모호성: {our_vector[14]:.3f}")
+    
+    def _calculate_overall_performance(self, results: List[Dict]) -> Dict:
+        """전체 성능 계산"""
+        
+        emotion_scores = [r['evaluation_scores']['emotion_match_score'] for r in results]
+        complexity_scores = [r['evaluation_scores']['complexity_score'] for r in results]
+        overall_scores = [r['evaluation_scores']['overall_score'] for r in results]
+        
+        summary = {
+            'average_emotion_match': np.mean(emotion_scores),
+            'average_complexity_appropriateness': np.mean(complexity_scores),
+            'average_overall_score': np.mean(overall_scores),
+            'score_std': np.std(overall_scores),
+            'best_performing_poem': max(results, key=lambda x: x['evaluation_scores']['overall_score'])['poem_info']['title'],
+            'worst_performing_poem': min(results, key=lambda x: x['evaluation_scores']['overall_score'])['poem_info']['title']
+        }
+        
+        print(f"\n{'='*20} 전체 성능 요약 {'='*20}")
+        print(f"평균 감정 매칭 점수: {summary['average_emotion_match']:.3f}")
+        print(f"평균 복잡도 적절성: {summary['average_complexity_appropriateness']:.3f}")
+        print(f"평균 전체 점수: {summary['average_overall_score']:.3f}")
+        print(f"점수 표준편차: {summary['score_std']:.3f}")
+        print(f"최고 성능 시: {summary['best_performing_poem']}")
+        print(f"최저 성능 시: {summary['worst_performing_poem']}")
+        
+        return summary
+    
+    def generate_comparison_report(self, test_results: Dict, output_path: str):
+        """비교 분석 보고서 생성"""
+        
+        # 1. 성능 점수 시각화
+        scores_data = []
+        for result in test_results['individual_results']:
+            scores_data.append({
+                'poem': result['poem_info']['title'],
+                'emotion_match': result['evaluation_scores']['emotion_match_score'],
+                'complexity': result['evaluation_scores']['complexity_score'],
+                'overall': result['evaluation_scores']['overall_score']
+            })
+        
+        df_scores = pd.DataFrame(scores_data)
+        
+        # 시각화
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        
+        # 전체 점수 바 차트
+        axes[0, 0].bar(df_scores['poem'], df_scores['overall'])
+        axes[0, 0].set_title('전체 점수 (시별)')
+        axes[0, 0].set_ylabel('점수')
+        axes[0, 0].tick_params(axis='x', rotation=45)
+        
+        # 감정 매칭 vs 복잡도 산점도
+        axes[0, 1].scatter(df_scores['emotion_match'], df_scores['complexity'])
+        for i, poem in enumerate(df_scores['poem']):
+            axes[0, 1].annotate(poem, (df_scores['emotion_match'][i], df_scores['complexity'][i]))
+        axes[0, 1].set_xlabel('감정 매칭 점수')
+        axes[0, 1].set_ylabel('복잡도 적절성')
+        axes[0, 1].set_title('감정 매칭 vs 복잡도')
+        
+        # 감정 벡터 히트맵 (첫 번째 시)
+        first_result = test_results['individual_results'][0]
+        emotion_vector = np.array(first_result['our_analysis']['emotion_vector_28d']).reshape(4, 7)
+        im = axes[1, 0].imshow(emotion_vector, cmap='coolwarm', aspect='auto')
+        axes[1, 0].set_title(f'감정 벡터 히트맵: {first_result["poem_info"]["title"]}')
+        plt.colorbar(im, ax=axes[1, 0])
+        
+        # 성능 분포 히스토그램
+        axes[1, 1].hist(df_scores['overall'], bins=10, alpha=0.7)
+        axes[1, 1].axvline(np.mean(df_scores['overall']), color='red', linestyle='--', label='평균')
+        axes[1, 1].set_xlabel('전체 점수')
+        axes[1, 1].set_ylabel('빈도')
+        axes[1, 1].set_title('성능 점수 분포')
+        axes[1, 1].legend()
+        
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"비교 분석 보고서 저장: {output_path}")
+
+# =============================================================================
+# 3. 통합 테스트 실행기
+# =============================================================================
+
+class AccuracyTestRunner:
+    """통합 테스트 실행기"""
+    
+    def __init__(self, emotion_system):
+        self.emotion_system = emotion_system
+        self.voice_tester = VoiceEmotionTestSystem(emotion_system)
+        self.poetry_tester = PoetryAnalysisComparison(emotion_system)
+        
+    def run_full_accuracy_test(self, audio_dir: Optional[str] = None, 
+                             output_dir: str = "./test_results"):
+        """전체 정확도 테스트 실행"""
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        print(f"\n{'='*50}")
+        print("🧠 감정 분석 시스템 정확도 테스트 시작")
+        print(f"{'='*50}")
+        
+        all_results = {}
+        
+        # 1. 시 분석 테스트 (항상 실행)
+        print("\n1️⃣ 시 분석 정확도 테스트")
+        poetry_results = self.poetry_tester.run_poetry_comparison_test()
+        all_results['poetry_test'] = poetry_results
+        
+        # 시각화 보고서 생성
+        poetry_report_path = output_path / "poetry_analysis_report.png"
+        self.poetry_tester.generate_comparison_report(poetry_results, str(poetry_report_path))
+        
+        # 2. 음성 분석 테스트 (오디오 디렉토리가 제공된 경우)
+        if audio_dir and Path(audio_dir).exists():
+            print("\n2️⃣ 음성 분석 정확도 테스트")
+            voice_results = self.voice_tester.run_audio_test_batch(audio_dir)
+            all_results['voice_test'] = voice_results
+        else:
+            print("\n2️⃣ 음성 분석 테스트 건너뜀 (오디오 디렉토리 없음)")
+        
+        # 3. 전체 결과 저장
+        results_file = output_path / "full_accuracy_test_results.json"
+        with open(results_file, 'w', encoding='utf-8') as f:
+            # numpy 배열을 리스트로 변환하여 JSON 직렬화
+            json_serializable_results = self._make_json_serializable(all_results)
+            json.dump(json_serializable_results, f, ensure_ascii=False, indent=2)
+        
+        print(f"\n✅ 전체 테스트 완료!")
+        print(f"📁 결과 저장 위치: {output_path}")
+        print(f"📊 상세 결과: {results_file}")
+        
+        return all_results
+    
+    def _make_json_serializable(self, obj):
+        """numpy 배열 등을 JSON 직렬화 가능하게 변환"""
+        if isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        else:
+            return obj
+
+# =============================================================================
+# 4. 메인 실행 함수
+# =============================================================================
+
+def main():
+    """메인 테스트 실행 함수"""
+    
+    print("감정 분석 시스템 정확도 검증 테스트")
+    print("=" * 50)
+    
+    # 시스템 초기화 (실제 시스템으로 교체 필요)
+    # emotion_system = IntegratedEmotionAnalysisSystem()
+    
+    # 더미 시스템으로 테스트
+    class DummyEmotionSystem:
+        def analyze_emotion(self, text):
+            return {
+                'emotion_vector_28d': np.random.rand(28).tolist(),
+                'confidence_scores': np.random.rand(5).tolist()
+            }
+    
+    emotion_system = DummyEmotionSystem()
+    
+    # 테스트 실행기 생성
+    test_runner = AccuracyTestRunner(emotion_system)
+    
+    # 테스트 실행
+    # audio_directory = input("음성 파일 디렉토리 경로 (건너뛰려면 Enter): ").strip()
+    # if not audio_directory:
+    #     audio_directory = None
+    
+    results = test_runner.run_full_accuracy_test(
+        audio_dir=None,  # 오디오 테스트 건너뜀
+        output_dir="./test_results"
+    )
+    
+    print("\n🎉 테스트 완료!")
+
+if __name__ == "__main__":
+    main()

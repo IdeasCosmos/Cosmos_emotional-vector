@@ -1,0 +1,784 @@
+#!/usr/bin/env python3
+"""
+통합된 양방향 감정-음악 시스템
+- 기존 코드들을 통합한 완성형 시스템
+- 실시간 적응 학습
+- Up-Down/Down-Up 양방향 상호작용
+- 한국어 특화 감정 분석
+- 음악적 표현 변환
+"""
+
+import numpy as np
+import time
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass, field
+from collections import deque
+import json
+
+# =============================================================================
+# 1. 통합 데이터 구조
+# =============================================================================
+
+@dataclass
+class EmotionVector:
+    """28차원 감정 벡터"""
+    amplitude: np.ndarray      # 0-7: 감정 강도
+    phase: np.ndarray         # 8-15: 관계성
+    emotion_components: np.ndarray  # 16-21: 감정 성분
+    consistency: np.ndarray    # 22-27: 일관성
+
+@dataclass
+class SystemMemory:
+    """시스템 학습 기억"""
+    experiences: deque = field(default_factory=lambda: deque(maxlen=1000))
+    weights_history: deque = field(default_factory=lambda: deque(maxlen=100))
+    performance_history: deque = field(default_factory=lambda: deque(maxlen=500))
+
+@dataclass
+class AnalysisResult:
+    """통합 분석 결과"""
+    emotion_vector: EmotionVector
+    hierarchical_analysis: Dict
+    music_expression: Dict
+    confidence_score: float
+    processing_time: float
+    adaptation_metadata: Dict
+
+# =============================================================================
+# 2. 핵심 통합 시스템
+# =============================================================================
+
+class UnifiedBidirectionalSystem:
+    """
+    통합된 양방향 감정-음악 시스템
+    
+    핵심 기능:
+    1. 실시간 적응 학습
+    2. 계층적 양방향 상호작용
+    3. 한국어 특화 감정 분석
+    4. 음악적 표현 변환
+    5. 자가 최적화
+    """
+    
+    def __init__(self):
+        # 시스템 메모리
+        self.memory = SystemMemory()
+        
+        # 동적 가중치 (계층별 중요도)
+        self.dynamic_weights = {
+            'morpheme': 0.15,    # 형태소
+            'word': 0.25,        # 단어
+            'phrase': 0.20,      # 구문
+            'sentence': 0.25,    # 문장
+            'discourse': 0.15    # 담화
+        }
+        
+        # 상호작용 가중치 (Up-Down vs Down-Up)
+        self.interaction_weights = {
+            'up_down_strength': 0.4,      # 담화→형태소 (하향)
+            'down_up_strength': 0.4,      # 형태소→담화 (상향)
+            'cross_layer_correlation': 0.2 # 교차 계층
+        }
+        
+        # 학습 파라미터
+        self.learning_rate = 0.01
+        self.adaptation_speed = 0.05
+        self.learning_active = True
+        
+        # 한국어 특화 감정 사전
+        self.korean_emotions = self._initialize_korean_emotions()
+        
+        # 음악 변환 엔진
+        self.music_templates = self._initialize_music_templates()
+        
+        # 성능 메트릭
+        self.performance_metrics = {
+            'total_analyses': 0,
+            'accuracy_trend': [],
+            'adaptation_rate': 0.0
+        }
+    
+    def analyze_emotion_to_music(self, text: str, user_feedback: Optional[Dict] = None) -> AnalysisResult:
+        """
+        메인 분석 함수: 텍스트 → 감정 → 음악
+        
+        Args:
+            text: 분석할 텍스트
+            user_feedback: 사용자 피드백 (정확도, 선호도 등)
+        
+        Returns:
+            AnalysisResult: 통합 분석 결과
+        """
+        start_time = time.time()
+        
+        # 1. 계층적 감정 분석
+        hierarchical_analysis = self._analyze_hierarchical(text)
+        
+        # 2. 양방향 상호작용 처리
+        bidirectional_effects = self._process_bidirectional_interactions(hierarchical_analysis)
+        
+        # 3. 28차원 감정 벡터 생성
+        emotion_vector = self._generate_emotion_vector(hierarchical_analysis, bidirectional_effects)
+        
+        # 4. 음악 표현 변환
+        music_expression = self._convert_to_music(emotion_vector)
+        
+        # 5. 실시간 학습 (피드백이 있을 때)
+        adaptation_metadata = {}
+        if user_feedback and self.learning_active:
+            adaptation_metadata = self._perform_real_time_learning(
+                hierarchical_analysis, emotion_vector, music_expression, user_feedback
+            )
+        
+        # 6. 신뢰도 계산
+        confidence_score = self._calculate_confidence(hierarchical_analysis, bidirectional_effects)
+        
+        # 7. 성능 메트릭 업데이트
+        self._update_performance_metrics(confidence_score, user_feedback)
+        
+        processing_time = time.time() - start_time
+        
+        return AnalysisResult(
+            emotion_vector=emotion_vector,
+            hierarchical_analysis=hierarchical_analysis,
+            music_expression=music_expression,
+            confidence_score=confidence_score,
+            processing_time=processing_time,
+            adaptation_metadata=adaptation_metadata
+        )
+    
+    def _analyze_hierarchical(self, text: str) -> Dict:
+        """계층적 감정 분석"""
+        
+        # 형태소 분석
+        morpheme_result = self._analyze_morphemes(text)
+        
+        # 단어 분석
+        word_result = self._analyze_words(text)
+        
+        # 구문 분석
+        phrase_result = self._analyze_phrases(text)
+        
+        # 문장 분석
+        sentence_result = self._analyze_sentences(text)
+        
+        # 담화 분석
+        discourse_result = self._analyze_discourse(text)
+        
+        return {
+            'morpheme': morpheme_result,
+            'word': word_result,
+            'phrase': phrase_result,
+            'sentence': sentence_result,
+            'discourse': discourse_result,
+            'text': text
+        }
+    
+    def _analyze_morphemes(self, text: str) -> Dict:
+        """형태소 분석 - 한국어 특화"""
+        
+        detected_morphemes = []
+        total_intensity = 0.0
+        cultural_weight = 0.0
+        
+        # 한국어 형태소 감정 매핑
+        for morpheme, emotion_data in self.korean_emotions['morphemes'].items():
+            count = text.count(morpheme)
+            if count > 0:
+                detected_morphemes.append({
+                    'morpheme': morpheme,
+                    'emotion': emotion_data['emotion'],
+                    'intensity': emotion_data['intensity'] * count,
+                    'cultural_significance': emotion_data['cultural_weight'],
+                    'count': count
+                })
+                total_intensity += emotion_data['intensity'] * count
+                cultural_weight += emotion_data['cultural_weight']
+        
+        confidence = min(len(detected_morphemes) * 0.2 + cultural_weight * 0.3, 1.0)
+        
+        return {
+            'detected_morphemes': detected_morphemes,
+            'total_intensity': min(total_intensity, 1.0),
+            'cultural_significance': cultural_weight / max(len(detected_morphemes), 1),
+            'confidence': confidence,
+            'micro_adjustment_power': min(len(detected_morphemes) * 0.3, 1.0)
+        }
+    
+    def _analyze_words(self, text: str) -> Dict:
+        """단어 분석"""
+        
+        detected_words = []
+        valence_sum = 0.0
+        arousal_sum = 0.0
+        
+        for word, emotion_data in self.korean_emotions['words'].items():
+            if word in text:
+                detected_words.append({
+                    'word': word,
+                    'valence': emotion_data['valence'],
+                    'arousal': emotion_data['arousal'],
+                    'complexity': emotion_data.get('complexity', 0.5)
+                })
+                valence_sum += emotion_data['valence']
+                arousal_sum += emotion_data['arousal']
+        
+        word_count = max(len(detected_words), 1)
+        
+        return {
+            'detected_words': detected_words,
+            'average_valence': valence_sum / word_count,
+            'average_arousal': arousal_sum / word_count,
+            'word_diversity': len(detected_words),
+            'confidence': min(len(detected_words) * 0.15, 1.0)
+        }
+    
+    def _analyze_phrases(self, text: str) -> Dict:
+        """구문 분석 - 반어법, 완곡 표현 등"""
+        
+        detected_patterns = []
+        
+        # 반어법 패턴
+        sarcasm_patterns = [r'참.*잘.*했', r'정말.*대단', r'와.*좋']
+        
+        import re
+        for pattern in sarcasm_patterns:
+            if re.search(pattern, text):
+                detected_patterns.append({
+                    'type': 'sarcasm',
+                    'confidence': 0.8,
+                    'emotion_shift': -0.8  # 감정 반전
+                })
+        
+        # 완곡 표현
+        polite_patterns = ['아무래도', '좀', '조금', '약간']
+        politeness_level = sum(text.count(marker) for marker in polite_patterns) * 0.3
+        
+        return {
+            'detected_patterns': detected_patterns,
+            'sarcasm_detected': any(p['type'] == 'sarcasm' for p in detected_patterns),
+            'politeness_level': min(politeness_level, 1.0),
+            'confidence': 0.7 if detected_patterns else 0.5
+        }
+    
+    def _analyze_sentences(self, text: str) -> Dict:
+        """문장 분석"""
+        
+        sentences = [s.strip() for s in text.split('.') if s.strip()]
+        
+        emotional_variation = 0.0
+        if len(sentences) > 1:
+            sentence_lengths = [len(s) for s in sentences]
+            emotional_variation = np.std(sentence_lengths) / np.mean(sentence_lengths)
+        
+        complexity_score = len(sentences) + text.count('하지만') + text.count('그런데')
+        
+        return {
+            'sentence_count': len(sentences),
+            'average_length': np.mean([len(s) for s in sentences]) if sentences else 0,
+            'emotional_variation': emotional_variation,
+            'complexity_score': min(complexity_score, 10),
+            'confidence': min(len(sentences) * 0.2, 1.0)
+        }
+    
+    def _analyze_discourse(self, text: str) -> Dict:
+        """담화 분석"""
+        
+        # 전체적 톤 계산
+        positive_words = ['좋', '기쁘', '행복', '만족']
+        negative_words = ['슬프', '화나', '싫', '우울']
+        
+        positive_count = sum(text.count(word) for word in positive_words)
+        negative_count = sum(text.count(word) for word in negative_words)
+        
+        overall_tone = (positive_count - negative_count) / max(len(text) / 10, 1)
+        overall_tone = max(-1.0, min(1.0, overall_tone))
+        
+        # 일관성 점수
+        words = text.split()
+        unique_ratio = len(set(words)) / max(len(words), 1)
+        coherence_score = min(unique_ratio * 1.5, 1.0)
+        
+        return {
+            'overall_tone': overall_tone,
+            'coherence_score': coherence_score,
+            'text_length': len(text),
+            'contextual_power': min(len(text) / 100, 1.0),
+            'confidence': min(len(text) / 50, 1.0)
+        }
+    
+    def _process_bidirectional_interactions(self, hierarchical_analysis: Dict) -> Dict:
+        """양방향 상호작용 처리 - 핵심 알고리즘"""
+        
+        layers = ['morpheme', 'word', 'phrase', 'sentence', 'discourse']
+        
+        # 각 계층의 주요 값 추출
+        layer_values = {
+            'morpheme': hierarchical_analysis['morpheme']['total_intensity'],
+            'word': hierarchical_analysis['word']['average_valence'],
+            'phrase': len(hierarchical_analysis['phrase']['detected_patterns']),
+            'sentence': hierarchical_analysis['sentence']['emotional_variation'],
+            'discourse': hierarchical_analysis['discourse']['overall_tone']
+        }
+        
+        # Up-Down 영향 계산 (담화 → 형태소)
+        discourse_tone = layer_values['discourse']
+        up_down_effects = {}
+        
+        for layer in layers[:-1]:  # discourse 제외
+            if discourse_tone < -0.3:  # 부정적 담화 톤
+                adjustment = abs(discourse_tone) * self.interaction_weights['up_down_strength']
+                up_down_effects[layer] = -adjustment
+            else:
+                up_down_effects[layer] = 0.0
+        
+        # Down-Up 영향 계산 (형태소 → 담화)
+        morpheme_power = hierarchical_analysis['morpheme']['micro_adjustment_power']
+        down_up_effects = {}
+        
+        if morpheme_power > 0.7:  # 강한 형태소 영향
+            adjustment = morpheme_power * self.interaction_weights['down_up_strength']
+            for layer in layers[1:]:  # morpheme 제외
+                down_up_effects[layer] = adjustment * 0.3
+        else:
+            for layer in layers[1:]:
+                down_up_effects[layer] = 0.0
+        
+        # 상호작용 강도 계산
+        up_down_strength = np.mean(list(up_down_effects.values()))
+        down_up_strength = np.mean(list(down_up_effects.values()))
+        
+        # 동적 가중치 조정
+        self._adjust_dynamic_weights(hierarchical_analysis, up_down_strength, down_up_strength)
+        
+        return {
+            'up_down_effects': up_down_effects,
+            'down_up_effects': down_up_effects,
+            'up_down_strength': up_down_strength,
+            'down_up_strength': down_up_strength,
+            'dominant_direction': 'up_down' if abs(up_down_strength) > abs(down_up_strength) else 'down_up',
+            'interaction_balance': abs(up_down_strength - down_up_strength)
+        }
+    
+    def _generate_emotion_vector(self, hierarchical_analysis: Dict, bidirectional_effects: Dict) -> EmotionVector:
+        """28차원 감정 벡터 생성"""
+        
+        # 0-7차원: 진폭 성분 (감정 강도)
+        amplitude = np.array([
+            hierarchical_analysis['discourse']['overall_tone'],  # 전체 톤
+            hierarchical_analysis['morpheme']['total_intensity'],  # 형태소 강도
+            hierarchical_analysis['word']['average_valence'],  # 단어 감정가
+            hierarchical_analysis['phrase']['politeness_level'],  # 정중함
+            hierarchical_analysis['sentence']['emotional_variation'],  # 감정 변화
+            hierarchical_analysis['morpheme']['cultural_significance'],  # 문화적 의미
+            hierarchical_analysis['discourse']['contextual_power'],  # 맥락력
+            bidirectional_effects['interaction_balance']  # 상호작용 균형
+        ])
+        
+        # 8-15차원: 위상 성분 (관계성)
+        phase = np.array([
+            bidirectional_effects['up_down_strength'],  # 하향 영향력
+            bidirectional_effects['down_up_strength'],  # 상향 영향력
+            hierarchical_analysis['morpheme']['micro_adjustment_power'],  # 미세 조정력
+            hierarchical_analysis['sentence']['complexity_score'] / 10,  # 구조 복잡도
+            hierarchical_analysis['word']['word_diversity'] / 10,  # 어휘 다양성
+            len(hierarchical_analysis['phrase']['detected_patterns']) / 5,  # 패턴 밀도
+            hierarchical_analysis['discourse']['coherence_score'],  # 일관성
+            np.random.normal(0.5, 0.1)  # 창의적 변동성
+        ])
+        
+        # 16-21차원: 감정 성분
+        overall_tone = hierarchical_analysis['discourse']['overall_tone']
+        emotion_components = np.array([
+            max(0, overall_tone),  # 긍정성
+            max(0, -overall_tone),  # 부정성
+            1 - abs(overall_tone),  # 중립성
+            np.std([hierarchical_analysis[layer]['confidence'] for layer in ['morpheme', 'word', 'phrase', 'sentence', 'discourse']]),  # 복잡성
+            hierarchical_analysis['morpheme']['cultural_significance'],  # 문화적 뉘앙스
+            hierarchical_analysis['phrase']['politeness_level']  # 사회적 관계성
+        ])
+        
+        # 22-27차원: 일관성 지수
+        confidences = [hierarchical_analysis[layer]['confidence'] for layer in ['morpheme', 'word', 'phrase', 'sentence', 'discourse']]
+        consistency = np.array([
+            np.mean(confidences),  # 전체 일관성
+            1 - np.std(confidences),  # 계층간 일관성
+            hierarchical_analysis['discourse']['coherence_score'],  # 담화 일관성
+            self._calculate_temporal_consistency(hierarchical_analysis),  # 시간적 일관성
+            self._calculate_cultural_consistency(hierarchical_analysis),  # 문화적 일관성
+            bidirectional_effects['interaction_balance']  # 상호작용 일관성
+        ])
+        
+        return EmotionVector(
+            amplitude=amplitude,
+            phase=phase,
+            emotion_components=emotion_components,
+            consistency=consistency
+        )
+    
+    def _convert_to_music(self, emotion_vector: EmotionVector) -> Dict:
+        """감정 벡터를 음악 표현으로 변환"""
+        
+        # 주요 감정 특성 추출
+        overall_tone = emotion_vector.amplitude[0]
+        intensity = np.mean(emotion_vector.amplitude)
+        complexity = emotion_vector.emotion_components[3]
+        cultural_nuance = emotion_vector.emotion_components[4]
+        
+        # 음악 스타일 결정
+        if cultural_nuance > 0.7:
+            base_style = 'korean_traditional'
+        elif complexity > 0.7:
+            base_style = 'complex_harmony'
+        elif overall_tone > 0.5:
+            base_style = 'bright_major'
+        elif overall_tone < -0.5:
+            base_style = 'melancholy_minor'
+        else:
+            base_style = 'neutral_modal'
+        
+        # 템플릿에서 기본 구조 가져오기
+        template = self.music_templates.get(base_style, self.music_templates['neutral_modal'])
+        
+        # 감정 벡터에 따른 조정
+        music_expression = template.copy()
+        
+        # 템포 조정 (각성도 기반)
+        arousal = np.mean(emotion_vector.amplitude[1:4])
+        tempo_adjustment = (arousal - 0.5) * 40
+        music_expression['tempo'] = max(60, min(180, int(template['tempo'] + tempo_adjustment)))
+        
+        # 강약 조정 (강도 기반)
+        if intensity > 0.8:
+            music_expression['dynamics'] = 'fortissimo'
+        elif intensity > 0.6:
+            music_expression['dynamics'] = 'forte'
+        elif intensity > 0.4:
+            music_expression['dynamics'] = 'mezzo_forte'
+        elif intensity > 0.2:
+            music_expression['dynamics'] = 'mezzo_piano'
+        else:
+            music_expression['dynamics'] = 'piano'
+        
+        # 감정 아크 생성 (8마디)
+        emotional_arc = []
+        for i in range(8):
+            measure_intensity = emotion_vector.amplitude[i % 8]
+            emotional_arc.append(float(measure_intensity))
+        
+        music_expression.update({
+            'emotional_arc': emotional_arc,
+            'complexity_level': float(complexity),
+            'cultural_elements': self._extract_cultural_elements(cultural_nuance),
+            'harmonic_progression': self._generate_harmonic_progression(emotion_vector),
+            'expression_markings': self._generate_expression_markings(emotion_vector)
+        })
+        
+        return music_expression
+    
+    def _perform_real_time_learning(self, hierarchical_analysis: Dict, emotion_vector: EmotionVector, 
+                                   music_expression: Dict, user_feedback: Dict) -> Dict:
+        """실시간 학습 수행"""
+        
+        # 경험 저장
+        experience = {
+            'timestamp': time.time(),
+            'hierarchical_analysis': hierarchical_analysis,
+            'emotion_vector': emotion_vector,
+            'music_expression': music_expression,
+            'user_feedback': user_feedback,
+            'weights_used': self.dynamic_weights.copy()
+        }
+        self.memory.experiences.append(experience)
+        
+        # 성능 점수 계산
+        accuracy = user_feedback.get('accuracy_rating', 5) / 10.0
+        self.memory.performance_history.append(accuracy)
+        
+        # 가중치 조정
+        if accuracy < 0.6:  # 성능이 낮으면 가중치 조정
+            self._adjust_weights_from_feedback(hierarchical_analysis, user_feedback)
+        
+        # 적응률 계산
+        if len(self.memory.performance_history) >= 10:
+            recent_scores = list(self.memory.performance_history)[-10:]
+            adaptation_rate = np.std(recent_scores)
+            self.performance_metrics['adaptation_rate'] = adaptation_rate
+        
+        return {
+            'learning_executed': True,
+            'accuracy_score': accuracy,
+            'weights_adjusted': accuracy < 0.6,
+            'experience_count': len(self.memory.experiences),
+            'adaptation_rate': self.performance_metrics.get('adaptation_rate', 0.0)
+        }
+    
+    def _adjust_dynamic_weights(self, hierarchical_analysis: Dict, up_down_strength: float, down_up_strength: float):
+        """동적 가중치 조정"""
+        
+        # 신뢰도 기반 조정
+        for layer in self.dynamic_weights:
+            confidence = hierarchical_analysis[layer]['confidence']
+            if confidence > 0.8:
+                self.dynamic_weights[layer] *= 1.1  # 신뢰도 높으면 가중치 증가
+            elif confidence < 0.4:
+                self.dynamic_weights[layer] *= 0.9  # 신뢰도 낮으면 가중치 감소
+        
+        # 상호작용 강도 기반 조정
+        if abs(up_down_strength) > abs(down_up_strength):
+            # 하향 영향이 강하면 상위 계층 가중치 증가
+            self.dynamic_weights['discourse'] *= 1.05
+            self.dynamic_weights['morpheme'] *= 0.95
+        else:
+            # 상향 영향이 강하면 하위 계층 가중치 증가
+            self.dynamic_weights['morpheme'] *= 1.05
+            self.dynamic_weights['discourse'] *= 0.95
+        
+        # 정규화
+        total_weight = sum(self.dynamic_weights.values())
+        self.dynamic_weights = {k: v/total_weight for k, v in self.dynamic_weights.items()}
+    
+    def _adjust_weights_from_feedback(self, hierarchical_analysis: Dict, user_feedback: Dict):
+        """사용자 피드백 기반 가중치 조정"""
+        
+        correct_emotion = user_feedback.get('correct_emotion', '')
+        
+        # 감정별 계층 중요도 조정
+        if '복합' in correct_emotion or '미묘' in correct_emotion:
+            # 복합감정이면 형태소와 구문 중요도 증가
+            self.dynamic_weights['morpheme'] *= 1.1
+            self.dynamic_weights['phrase'] *= 1.1
+        elif '강한' in correct_emotion or '명확' in correct_emotion:
+            # 강한 감정이면 단어와 담화 중요도 증가
+            self.dynamic_weights['word'] *= 1.1
+            self.dynamic_weights['discourse'] *= 1.1
+        
+        # 정규화
+        total_weight = sum(self.dynamic_weights.values())
+        self.dynamic_weights = {k: v/total_weight for k, v in self.dynamic_weights.items()}
+    
+    def _calculate_confidence(self, hierarchical_analysis: Dict, bidirectional_effects: Dict) -> float:
+        """전체 신뢰도 계산"""
+        
+        # 계층별 신뢰도 가중 평균
+        layer_confidences = [hierarchical_analysis[layer]['confidence'] for layer in ['morpheme', 'word', 'phrase', 'sentence', 'discourse']]
+        weighted_confidence = sum(conf * weight for conf, weight in zip(layer_confidences, self.dynamic_weights.values()))
+        
+        # 상호작용 균형도 반영
+        interaction_confidence = 1.0 - bidirectional_effects['interaction_balance']
+        
+        # 전체 신뢰도
+        overall_confidence = (weighted_confidence * 0.8 + interaction_confidence * 0.2)
+        
+        return min(overall_confidence, 1.0)
+    
+    def _update_performance_metrics(self, confidence_score: float, user_feedback: Optional[Dict]):
+        """성능 메트릭 업데이트"""
+        
+        self.performance_metrics['total_analyses'] += 1
+        
+        if user_feedback:
+            accuracy = user_feedback.get('accuracy_rating', 5) / 10.0
+            self.performance_metrics['accuracy_trend'].append(accuracy)
+            
+            # 최근 10개 평균으로 트렌드 계산
+            if len(self.performance_metrics['accuracy_trend']) > 10:
+                self.performance_metrics['accuracy_trend'] = self.performance_metrics['accuracy_trend'][-10:]
+    
+    def get_system_status(self) -> Dict:
+        """시스템 상태 반환"""
+        
+        return {
+            'performance_metrics': self.performance_metrics,
+            'dynamic_weights': self.dynamic_weights,
+            'interaction_weights': self.interaction_weights,
+            'memory_usage': {
+                'experiences': len(self.memory.experiences),
+                'performance_history': len(self.memory.performance_history),
+                'weights_history': len(self.memory.weights_history)
+            },
+            'learning_active': self.learning_active,
+            'system_health': self._calculate_system_health()
+        }
+    
+    def _calculate_system_health(self) -> float:
+        """시스템 건강도 계산"""
+        
+        if len(self.memory.performance_history) < 5:
+            return 0.7  # 초기값
+        
+        recent_performance = list(self.memory.performance_history)[-10:]
+        avg_performance = np.mean(recent_performance)
+        performance_stability = 1.0 - np.std(recent_performance)
+        
+        return (avg_performance + performance_stability) / 2
+    
+    # 헬퍼 메서드들
+    def _initialize_korean_emotions(self) -> Dict:
+        """한국어 감정 사전 초기화"""
+        
+        return {
+            'morphemes': {
+                '네요': {'emotion': 'soft_discovery', 'intensity': 0.6, 'cultural_weight': 0.9},
+                '군요': {'emotion': 'recognition', 'intensity': 0.5, 'cultural_weight': 0.8},
+                '거든요': {'emotion': 'justification', 'intensity': 0.7, 'cultural_weight': 0.9},
+                '잖아요': {'emotion': 'shared_knowledge', 'intensity': 0.6, 'cultural_weight': 0.9},
+                '더라고요': {'emotion': 'recollection', 'intensity': 0.5, 'cultural_weight': 0.8}
+            },
+            'words': {
+                '좋': {'valence': 0.8, 'arousal': 0.6, 'complexity': 0.2},
+                '기쁘': {'valence': 0.9, 'arousal': 0.8, 'complexity': 0.3},
+                '슬프': {'valence': -0.8, 'arousal': 0.3, 'complexity': 0.4},
+                '화나': {'valence': -0.7, 'arousal': 0.9, 'complexity': 0.3},
+                '그립': {'valence': -0.3, 'arousal': 0.5, 'complexity': 0.9},
+                '아련': {'valence': -0.2, 'arousal': 0.3, 'complexity': 0.9}
+            }
+        }
+    
+    def _initialize_music_templates(self) -> Dict:
+        """음악 템플릿 초기화"""
+        
+        return {
+            'korean_traditional': {
+                'scale': 'pentatonic',
+                'tempo': 80,
+                'dynamics': 'mezzo_piano',
+                'chords': ['Am', 'Dm', 'G', 'C', 'F'],
+                'mood': 'contemplative'
+            },
+            'complex_harmony': {
+                'scale': 'chromatic',
+                'tempo': 100,
+                'dynamics': 'mezzo_forte',
+                'chords': ['Cmaj7', 'Am7', 'Dm7', 'G7', 'Em7'],
+                'mood': 'sophisticated'
+            },
+            'bright_major': {
+                'scale': 'major',
+                'tempo': 120,
+                'dynamics': 'forte',
+                'chords': ['C', 'G', 'Am', 'F'],
+                'mood': 'joyful'
+            },
+            'melancholy_minor': {
+                'scale': 'minor',
+                'tempo': 70,
+                'dynamics': 'piano',
+                'chords': ['Am', 'F', 'C', 'G'],
+                'mood': 'melancholic'
+            },
+            'neutral_modal': {
+                'scale': 'dorian',
+                'tempo': 90,
+                'dynamics': 'mezzo_piano',
+                'chords': ['Dm', 'G', 'C', 'F'],
+                'mood': 'balanced'
+            }
+        }
+    
+    def _calculate_temporal_consistency(self, hierarchical_analysis: Dict) -> float:
+        """시간적 일관성 계산"""
+        # 간단한 구현 - 실제로는 더 복잡한 알고리즘 필요
+        return 0.8
+    
+    def _calculate_cultural_consistency(self, hierarchical_analysis: Dict) -> float:
+        """문화적 일관성 계산"""
+        morpheme_cultural = hierarchical_analysis['morpheme']['cultural_significance']
+        phrase_politeness = hierarchical_analysis['phrase']['politeness_level']
+        return (morpheme_cultural + phrase_politeness) / 2
+    
+    def _extract_cultural_elements(self, cultural_nuance: float) -> List[str]:
+        """문화적 요소 추출"""
+        elements = []
+        if cultural_nuance > 0.7:
+            elements.extend(['한국적 선율법', '미세음 굽힘'])
+        if cultural_nuance > 0.5:
+            elements.append('호흡법적 프레이징')
+        return elements
+    
+    def _generate_harmonic_progression(self, emotion_vector: EmotionVector) -> List[str]:
+        """화성 진행 생성"""
+        # 감정 벡터 기반 화성 진행 생성 (단순화)
+        base_chords = ['C', 'Am', 'F', 'G']
+        if emotion_vector.emotion_components[1] > 0.5:  # 부정적
+            base_chords = ['Am', 'Dm', 'G', 'C']
+        return base_chords
+    
+    def _generate_expression_markings(self, emotion_vector: EmotionVector) -> List[str]:
+        """표현 기호 생성"""
+        markings = []
+        if emotion_vector.emotion_components[4] > 0.7:  # 문화적 뉘앙스
+            markings.append('한국적 정서로 연주')
+        if emotion_vector.emotion_components[3] > 0.7:  # 복잡성
+            markings.append('복잡한 감정의 층위를 표현')
+        return markings
+
+# =============================================================================
+# 3. 사용 예시
+# =============================================================================
+
+def main_demo():
+    """통합 시스템 데모"""
+    
+    print("🎼 통합된 양방향 감정-음악 시스템")
+    print("=" * 50)
+    
+    # 시스템 초기화
+    system = UnifiedBidirectionalSystem()
+    
+    # 테스트 케이스들
+    test_cases = [
+        {
+            'text': "참 잘했어요. 정말 대단하네요. 아무래도 이런 식으로 하시면 될 것 같아요.",
+            'feedback': {'accuracy_rating': 8, 'correct_emotion': '복합감정_반어법'}
+        },
+        {
+            'text': "오늘 정말 좋은 하루였어요. 기분이 너무 좋네요!",
+            'feedback': {'accuracy_rating': 9, 'correct_emotion': '순수한_기쁨'}
+        },
+        {
+            'text': "그때가 참 그리워요... 다시는 돌아갈 수 없을 텐데.",
+            'feedback': {'accuracy_rating': 7, 'correct_emotion': '그리움_복합감정'}
+        }
+    ]
+    
+    print("분석 시작...\n")
+    
+    for i, case in enumerate(test_cases, 1):
+        print(f"[케이스 {i}] {case['text']}")
+        print("-" * 30)
+        
+        # 첫 번째는 피드백 없이, 나머지는 피드백과 함께
+        feedback = case['feedback'] if i > 1 else None
+        
+        result = system.analyze_emotion_to_music(case['text'], feedback)
+        
+        # 결과 출력
+        print(f"🎯 신뢰도: {result.confidence_score:.3f}")
+        print(f"⏱️  처리시간: {result.processing_time:.3f}초")
+        
+        # 감정 벡터 주요 정보
+        emotion = result.emotion_vector
+        print(f"📊 전체톤: {emotion.amplitude[0]:.3f}")
+        print(f"🔄 상호작용: 상향={emotion.phase[1]:.3f}, 하향={emotion.phase[0]:.3f}")
+        print(f"🎨 문화적요소: {emotion.emotion_components[4]:.3f}")
+        
+        # 음악 표현
+        music = result.music_expression
+        print(f"🎵 음악: {music['mood']} / {music['tempo']}BPM / {music['dynamics']}")
+        print(f"🎶 화성: {' - '.join(music['harmonic_progression'])}")
+        
+        if result.adaptation_metadata:
+            print(f"🧠 학습: 정확도={result.adaptation_metadata['accuracy_score']:.3f}")
+        
+        print()
+    
+    # 최종 시스템 상태
+    print("=" * 50)
+    status = system.get_system_status()
+    print(f"📈 총 분석: {status['performance_metrics']['total_analyses']}회")
+    print(f"🏥 시스템 건강도: {status['system_health']:.3f}")
+    print(f"🎛️  현재 가중치: {[f'{k}:{v:.2f}' for k, v in status['dynamic_weights'].items()]}")
+
+if __name__ == "__main__":
+    main_demo()

@@ -1,0 +1,736 @@
+#!/usr/bin/env python3
+"""
+업그레이드된 감정 분석 엔진
+- 계층적 감정분석 강화
+- 28차원 벡터 특화
+- 학습기반 통합
+- 정확도 검증 시스템
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+from transformers import AutoTokenizer, AutoModel
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler
+import pickle
+import json
+import re
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from pathlib import Path
+import logging
+
+# =============================================================================
+# 1. 강화된 계층적 감정 분석 엔진
+# =============================================================================
+
+class EnhancedHierarchicalAnalyzer:
+    """
+    업그레이드된 계층적 감정 분석기
+    - 실제 형태소 분석 통합
+    - 어텐션 메커니즘 도입
+    - 동적 가중치 적용
+    """
+    
+    def __init__(self, model_name: str = "klue/bert-base"):
+        # 사전 훈련된 한국어 모델 로드
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.bert_model = AutoModel.from_pretrained(model_name)
+        
+        # 확장된 감정 사전
+        self.load_enhanced_dictionaries()
+        
+        # 어텐션 가중치 모듈
+        self.attention_weights = self._initialize_attention()
+        
+        # 학습된 분류기 (초기화 후 load_trained_models로 로드)
+        self.emotion_classifier = None
+        self.complexity_predictor = None
+        self.scaler = StandardScaler()
+        
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+
+    def load_enhanced_dictionaries(self):
+        """확장된 감정 사전 로드"""
+        
+        # 1. 어미 감정 사전 (기존 + 확장)
+        self.morpheme_emotions = {
+            # 존대/격식 어미
+            '습니다': {'primary': '격식', 'intensity': 0.2, 'cultural': 0.9, 'politeness': 0.9},
+            '세요': {'primary': '존경', 'intensity': 0.3, 'cultural': 0.8, 'politeness': 0.8},
+            '시죠': {'primary': '제안_존댓말', 'intensity': 0.4, 'cultural': 0.7, 'politeness': 0.7},
+            
+            # 감정 표현 어미
+            '네요': {'primary': '놀람_발견', 'intensity': 0.6, 'cultural': 0.8, 'surprise': 0.7},
+            '군요': {'primary': '깨달음', 'intensity': 0.5, 'cultural': 0.7, 'realization': 0.8},
+            '거든요': {'primary': '정당화', 'intensity': 0.7, 'cultural': 0.9, 'assertion': 0.8},
+            '잖아요': {'primary': '공유지식', 'intensity': 0.6, 'cultural': 0.8, 'familiarity': 0.9},
+            
+            # 추측/불확실 어미
+            '것 같아': {'primary': '추측', 'intensity': 0.4, 'uncertainty': 0.8},
+            '듯해': {'primary': '유추', 'intensity': 0.3, 'uncertainty': 0.7},
+            '나봐': {'primary': '추정', 'intensity': 0.5, 'uncertainty': 0.6},
+            
+            # 감탄/강조 어미
+            '다니': {'primary': '놀람_강조', 'intensity': 0.8, 'emphasis': 0.9},
+            '라니': {'primary': '의외', 'intensity': 0.7, 'surprise': 0.8},
+            '다니까': {'primary': '강조_답답', 'intensity': 0.9, 'frustration': 0.8}
+        }
+        
+        # 2. 단어 감정 사전 (확장)
+        self.word_emotions = {
+            # 기본 감정
+            '기쁘': {'valence': 0.8, 'arousal': 0.7, 'complexity': 0.2, 'category': 'joy'},
+            '행복': {'valence': 0.9, 'arousal': 0.6, 'complexity': 0.3, 'category': 'joy'},
+            '슬프': {'valence': -0.8, 'arousal': 0.3, 'complexity': 0.4, 'category': 'sadness'},
+            '화나': {'valence': -0.7, 'arousal': 0.9, 'complexity': 0.3, 'category': 'anger'},
+            
+            # 한국어 특화 복합감정
+            '그립': {'valence': -0.3, 'arousal': 0.5, 'complexity': 0.9, 'category': 'longing'},
+            '아련': {'valence': -0.2, 'arousal': 0.3, 'complexity': 0.9, 'category': 'nostalgia'},
+            '뿌듯': {'valence': 0.7, 'arousal': 0.6, 'complexity': 0.6, 'category': 'pride'},
+            '섭섭': {'valence': -0.4, 'arousal': 0.4, 'complexity': 0.7, 'category': 'disappointment'},
+            '어이없': {'valence': -0.6, 'arousal': 0.8, 'complexity': 0.5, 'category': 'absurdity'},
+            
+            # 미묘한 감정들
+            '민망': {'valence': -0.3, 'arousal': 0.6, 'complexity': 0.8, 'category': 'embarrassment'},
+            '짠': {'valence': -0.5, 'arousal': 0.3, 'complexity': 0.7, 'category': 'poignant'},
+            '뭉클': {'valence': 0.2, 'arousal': 0.4, 'complexity': 0.8, 'category': 'touched'}
+        }
+        
+        # 3. 구문 패턴 (정규식 + 감정 수정자)
+        self.phrase_patterns = {
+            'sarcasm': {
+                'patterns': [r'참.*[잘|좋|대단]', r'정말.*[멋|훌륭]', r'와.*[대박|쩐다]'],
+                'emotion_modifier': {'valence_flip': True, 'intensity_boost': 1.5, 'complexity_boost': 0.8}
+            },
+            'irony': {
+                'patterns': [r'[고마워|감사].*정말', r'[좋|훌륭].*네요.*참'],
+                'emotion_modifier': {'valence': -0.7, 'irony_score': 0.9}
+            },
+            'understatement': {
+                'patterns': [r'나쁘지.*않', r'괜찮.*편', r'그럭저럭'],
+                'emotion_modifier': {'valence_compress': 0.3, 'modesty': 0.8}
+            },
+            'emphasis': {
+                'patterns': [r'진짜.*[정말|너무]', r'완전.*[대박|짱]'],
+                'emotion_modifier': {'intensity_boost': 2.0, 'certainty': 0.9}
+            }
+        }
+
+    def _initialize_attention(self) -> Dict:
+        """어텐션 가중치 초기화"""
+        return {
+            'morpheme_weight': 0.2,
+            'word_weight': 0.3,
+            'phrase_weight': 0.2,
+            'sentence_weight': 0.2,
+            'discourse_weight': 0.1,
+            'interaction_weight': 0.1
+        }
+
+    def analyze_enhanced_hierarchical(self, text: str) -> Dict:
+        """
+        강화된 계층적 분석
+        - BERT 임베딩 활용
+        - 어텐션 메커니즘 적용
+        - 동적 가중치 조정
+        """
+        
+        # 1. BERT 기반 컨텍스트 임베딩
+        context_embedding = self._get_bert_embedding(text)
+        
+        # 2. 각 계층별 분석 (기존 + 강화)
+        morpheme_result = self._analyze_morphemes_enhanced(text, context_embedding)
+        word_result = self._analyze_words_enhanced(text, context_embedding)
+        phrase_result = self._analyze_phrases_enhanced(text, context_embedding)
+        sentence_result = self._analyze_sentences_enhanced(text, context_embedding)
+        discourse_result = self._analyze_discourse_enhanced(text, context_embedding)
+        
+        # 3. 어텐션 기반 상호작용 분석
+        interaction_result = self._analyze_interactions_with_attention(
+            morpheme_result, word_result, phrase_result, 
+            sentence_result, discourse_result, context_embedding
+        )
+        
+        # 4. 동적 가중치 적용
+        dynamic_weights = self._calculate_dynamic_weights(
+            morpheme_result, word_result, phrase_result, 
+            sentence_result, discourse_result, text
+        )
+        
+        # 5. 최종 28차원 벡터 생성
+        final_vector = self._generate_enhanced_28d_vector(
+            morpheme_result, word_result, phrase_result,
+            sentence_result, discourse_result, interaction_result,
+            dynamic_weights, context_embedding
+        )
+        
+        return {
+            'hierarchical_analysis': {
+                'morpheme': morpheme_result,
+                'word': word_result,
+                'phrase': phrase_result,
+                'sentence': sentence_result,
+                'discourse': discourse_result
+            },
+            'interaction_analysis': interaction_result,
+            'dynamic_weights': dynamic_weights,
+            'bert_embedding': context_embedding.tolist() if context_embedding is not None else None,
+            'enhanced_28d_vector': final_vector,
+            'confidence_scores': self._calculate_confidence_scores(final_vector),
+            'meta_analysis': self._generate_meta_analysis(final_vector)
+        }
+
+    def _get_bert_embedding(self, text: str) -> Optional[np.ndarray]:
+        """BERT 기반 컨텍스트 임베딩 추출"""
+        try:
+            inputs = self.tokenizer(text, return_tensors='pt', truncation=True, max_length=512)
+            
+            with torch.no_grad():
+                outputs = self.bert_model(**inputs)
+                # CLS 토큰의 임베딩 사용
+                embedding = outputs.last_hidden_state[0, 0, :].numpy()
+                
+            return embedding
+        except Exception as e:
+            self.logger.warning(f"BERT embedding failed: {e}")
+            return None
+
+    def _analyze_morphemes_enhanced(self, text: str, context_embedding: Optional[np.ndarray]) -> Dict:
+        """강화된 형태소 분석"""
+        detected = []
+        total_intensity = 0
+        cultural_weight = 0
+        
+        # 기본 형태소 분석
+        for morpheme, data in self.morpheme_emotions.items():
+            positions = [m.start() for m in re.finditer(re.escape(morpheme), text)]
+            
+            for pos in positions:
+                # 컨텍스트 고려한 가중치 조정
+                context_boost = self._calculate_context_boost(text, morpheme, pos, context_embedding)
+                
+                detected.append({
+                    'morpheme': morpheme,
+                    'primary_emotion': data['primary'],
+                    'intensity': data['intensity'] * (1 + context_boost),
+                    'cultural_nuance': data.get('cultural', 0.5),
+                    'position': pos,
+                    'context_boost': context_boost,
+                    'surrounding_context': text[max(0, pos-10):pos+len(morpheme)+10]
+                })
+                
+                total_intensity += data['intensity'] * (1 + context_boost)
+                cultural_weight += data.get('cultural', 0.5)
+        
+        # 형태소 패턴 분석
+        pattern_score = self._analyze_morpheme_patterns(text)
+        
+        return {
+            'detected_morphemes': detected,
+            'total_intensity': total_intensity,
+            'cultural_weight': cultural_weight / max(len(detected), 1),
+            'morpheme_diversity': len(set([m['primary_emotion'] for m in detected])),
+            'pattern_score': pattern_score,
+            'confidence': min(len(detected) / 10, 1.0)  # 형태소 개수 기반 신뢰도
+        }
+
+    def _calculate_context_boost(self, text: str, word: str, position: int, 
+                               context_embedding: Optional[np.ndarray]) -> float:
+        """컨텍스트 기반 감정 강도 조정"""
+        boost = 0.0
+        
+        # 1. 주변 단어 분석 (±10 글자)
+        start = max(0, position - 10)
+        end = min(len(text), position + len(word) + 10)
+        context = text[start:end]
+        
+        # 강조 표현
+        intensifiers = ['정말', '너무', '엄청', '완전', '진짜', '매우', '아주']
+        for intensifier in intensifiers:
+            if intensifier in context:
+                boost += 0.3
+        
+        # 부정 표현
+        negations = ['안', '못', '아니', '없', '말고']
+        for negation in negations:
+            if negation in context:
+                boost -= 0.5
+        
+        # 2. BERT 임베딩 기반 조정 (있는 경우)
+        if context_embedding is not None:
+            # 간단한 휴리스틱: 임베딩 벡터의 분산으로 복잡도 추정
+            embedding_variance = np.var(context_embedding)
+            if embedding_variance > 0.1:  # 높은 분산 = 복잡한 컨텍스트
+                boost += 0.2
+        
+        return boost
+
+    def _analyze_morpheme_patterns(self, text: str) -> float:
+        """형태소 패턴 분석"""
+        pattern_score = 0.0
+        
+        # 연속된 감정 표현
+        emotion_sequence = re.findall(r'[기쁘|슬프|화나|놀라]+[다|요|어|아]+', text)
+        pattern_score += len(emotion_sequence) * 0.2
+        
+        # 반복 표현
+        repetitions = re.findall(r'(\w)\1{2,}', text)  # 3글자 이상 반복
+        pattern_score += len(repetitions) * 0.1
+        
+        return min(pattern_score, 1.0)
+
+# =============================================================================
+# 2. 특화된 28차원 벡터 생성기
+# =============================================================================
+
+class Enhanced28DVectorGenerator:
+    """
+    특화된 28차원 벡터 생성기
+    - 차원별 의미 명확화
+    - 정규화 및 스케일링
+    - 동적 가중치 적용
+    """
+    
+    def __init__(self):
+        self.dimension_definitions = self._define_vector_dimensions()
+        self.normalization_params = self._initialize_normalization()
+    
+    def _define_vector_dimensions(self) -> Dict:
+        """28차원 벡터의 각 차원 정의"""
+        return {
+            # 차원 1-8: 기본 감정 강도 (Primary Emotional Intensities)
+            1: {'name': 'overall_emotional_tone', 'range': [-1, 1], 'type': 'bipolar'},
+            2: {'name': 'word_level_valence', 'range': [-1, 1], 'type': 'bipolar'},
+            3: {'name': 'morpheme_intensity', 'range': [0, 1], 'type': 'unipolar'},
+            4: {'name': 'sentence_emotional_variation', 'range': [0, 1], 'type': 'unipolar'},
+            5: {'name': 'phrase_intensity_boost', 'range': [-1, 2], 'type': 'extended'},
+            6: {'name': 'hierarchical_downward_influence', 'range': [0, 1], 'type': 'unipolar'},
+            7: {'name': 'hierarchical_upward_influence', 'range': [0, 1], 'type': 'unipolar'},
+            8: {'name': 'final_emotional_state', 'range': [-1, 1], 'type': 'bipolar'},
+            
+            # 차원 9-16: 감정의 질과 복잡성 (Emotional Quality & Complexity)
+            9: {'name': 'arousal_level', 'range': [0, 1], 'type': 'unipolar'},
+            10: {'name': 'emotional_complexity', 'range': [0, 1], 'type': 'unipolar'},
+            11: {'name': 'cultural_nuance_weight', 'range': [0, 1], 'type': 'unipolar'},
+            12: {'name': 'politeness_formality', 'range': [0, 1], 'type': 'unipolar'},
+            13: {'name': 'irony_sarcasm_level', 'range': [0, 1], 'type': 'unipolar'},
+            14: {'name': 'linguistic_sophistication', 'range': [0, 1], 'type': 'unipolar'},
+            15: {'name': 'emotional_ambiguity', 'range': [0, 1], 'type': 'unipolar'},
+            16: {'name': 'contextual_dependency', 'range': [0, 1], 'type': 'unipolar'},
+            
+            # 차원 17-22: 시간적/구조적 특성 (Temporal & Structural Features)
+            17: {'name': 'text_rhythm_regularity', 'range': [0, 1], 'type': 'unipolar'},
+            18: {'name': 'emotional_progression_smoothness', 'range': [0, 1], 'type': 'unipolar'},
+            19: {'name': 'lexical_diversity', 'range': [0, 1], 'type': 'unipolar'},
+            20: {'name': 'syntactic_complexity', 'range': [0, 1], 'type': 'unipolar'},
+            21: {'name': 'discourse_coherence', 'range': [0, 1], 'type': 'unipolar'},
+            22: {'name': 'temporal_emotional_shifts', 'range': [0, 1], 'type': 'unipolar'},
+            
+            # 차원 23-28: 메타 정보 및 신뢰도 (Meta Information & Confidence)
+            23: {'name': 'text_length_normalized', 'range': [0, 1], 'type': 'unipolar'},
+            24: {'name': 'analysis_confidence', 'range': [0, 1], 'type': 'unipolar'},
+            25: {'name': 'bert_embedding_quality', 'range': [0, 1], 'type': 'unipolar'},
+            26: {'name': 'cross_validation_score', 'range': [0, 1], 'type': 'unipolar'},
+            27: {'name': 'uncertainty_estimation', 'range': [0, 1], 'type': 'unipolar'},
+            28: {'name': 'reserved_future_use', 'range': [0, 1], 'type': 'unipolar'}
+        }
+    
+    def _initialize_normalization(self) -> Dict:
+        """정규화 파라미터 초기화"""
+        return {
+            'global_mean': np.zeros(28),
+            'global_std': np.ones(28),
+            'adaptive_scaling': True,
+            'outlier_threshold': 3.0
+        }
+    
+    def generate_enhanced_vector(self, analysis_components: Dict) -> np.ndarray:
+        """강화된 28차원 벡터 생성"""
+        
+        vector = np.zeros(28)
+        
+        # 각 차원별 값 계산
+        vector = self._fill_primary_emotions(vector, analysis_components)
+        vector = self._fill_quality_complexity(vector, analysis_components)
+        vector = self._fill_temporal_structural(vector, analysis_components)
+        vector = self._fill_meta_information(vector, analysis_components)
+        
+        # 정규화 및 스케일링
+        vector = self._apply_normalization(vector)
+        
+        # 차원 간 일관성 검증
+        vector = self._ensure_consistency(vector)
+        
+        return vector
+    
+    def _fill_primary_emotions(self, vector: np.ndarray, components: Dict) -> np.ndarray:
+        """1-8차원: 기본 감정 강도 채우기"""
+        
+        discourse = components.get('discourse_result', {})
+        word = components.get('word_result', {})
+        morpheme = components.get('morpheme_result', {})
+        sentence = components.get('sentence_result', {})
+        interaction = components.get('interaction_result', {})
+        
+        vector[0] = discourse.get('overall_tone', 0.0)  # 전체 감정 톤
+        vector[1] = word.get('average_valence', 0.0)    # 단어 수준 감정가
+        vector[2] = morpheme.get('total_intensity', 0.0) / 10  # 형태소 강도 (정규화)
+        vector[3] = sentence.get('emotional_variation', 0.0)   # 문장 간 감정 변화
+        
+        # 구문 강도 부스트 (phrase_result에서)
+        phrase = components.get('phrase_result', {})
+        patterns = phrase.get('detected_patterns', [])
+        if patterns:
+            avg_boost = np.mean([p.get('modifier', {}).get('intensity_boost', 1.0) 
+                               for p in patterns])
+            vector[4] = (avg_boost - 1.0)  # 1.0을 기준으로 조정
+        
+        vector[5] = interaction.get('downward_influence', 0.0)  # 하향 영향
+        vector[6] = interaction.get('upward_influence', 0.0)    # 상향 영향
+        
+        # 최종 감정 상태 (감정 진행의 마지막 값)
+        progression = discourse.get('emotional_progression', [])
+        vector[7] = progression[-1] if progression else 0.0
+        
+        return vector
+    
+    def _fill_quality_complexity(self, vector: np.ndarray, components: Dict) -> np.ndarray:
+        """9-16차원: 감정의 질과 복잡성 채우기"""
+        
+        word = components.get('word_result', {})
+        morpheme = components.get('morpheme_result', {})
+        phrase = components.get('phrase_result', {})
+        sentence = components.get('sentence_result', {})
+        discourse = components.get('discourse_result', {})
+        
+        vector[8] = word.get('average_arousal', 0.0)           # 각성 수준
+        vector[9] = word.get('average_complexity', 0.0)       # 감정 복잡도
+        vector[10] = morpheme.get('cultural_weight', 0.0)     # 문화적 뉘앙스
+        vector[11] = phrase.get('politeness_level', 0.0)      # 정중함/격식
+        vector[12] = float(phrase.get('sarcasm_detected', 0)) # 풍자/비꼼
+        vector[13] = sentence.get('complexity_score', 0.0) / 10  # 언어적 정교함
+        
+        # 감정적 모호성 (여러 감정이 혼재하는 정도)
+        morpheme_diversity = morpheme.get('morpheme_diversity', 0)
+        word_diversity = word.get('word_diversity', 0)
+        vector[14] = min((morpheme_diversity + word_diversity) / 10, 1.0)
+        
+        # 컨텍스트 의존성
+        vector[15] = discourse.get('coherence_score', 0.0)
+        
+        return vector
+    
+    def _fill_temporal_structural(self, vector: np.ndarray, components: Dict) -> np.ndarray:
+        """17-22차원: 시간적/구조적 특성 채우기"""
+        
+        sentence = components.get('sentence_result', {})
+        discourse = components.get('discourse_result', {})
+        word = components.get('word_result', {})
+        morpheme = components.get('morpheme_result', {})
+        
+        # 텍스트 리듬 규칙성 (문장 길이의 일관성)
+        sentences = sentence.get('sentences', [])
+        if sentences:
+            lengths = [s.get('length', 0) for s in sentences]
+            vector[16] = 1.0 - (np.std(lengths) / (np.mean(lengths) + 1e-6))
+        
+        # 감정 진행의 부드러움
+        progression = discourse.get('emotional_progression', [])
+        if len(progression) > 1:
+            diff_variance = np.var(np.diff(progression))
+            vector[17] = 1.0 / (1.0 + diff_variance)  # 낮은 분산 = 부드러운 진행
+        
+        vector[18] = word.get('word_diversity', 0) / 20        # 어휘 다양성
+        vector[19] = sentence.get('complexity_score', 0) / 10  # 구문 복잡성
+        vector[20] = discourse.get('coherence_score', 0.0)     # 담화 일관성
+        vector[21] = len(progression) / 20 if progression else 0  # 감정 변화 횟수
+        
+        return vector
+    
+    def _fill_meta_information(self, vector: np.ndarray, components: Dict) -> np.ndarray:
+        """23-28차원: 메타 정보 및 신뢰도 채우기"""
+        
+        text_length = components.get('text_length', 0)
+        vector[22] = min(text_length / 1000, 1.0)  # 텍스트 길이 정규화
+        
+        # 분석 신뢰도 (각 구성요소의 신뢰도 평균)
+        confidences = []
+        for component_name in ['morpheme_result', 'word_result', 'phrase_result']:
+            component = components.get(component_name, {})
+            if 'confidence' in component:
+                confidences.append(component['confidence'])
+        
+        vector[23] = np.mean(confidences) if confidences else 0.5
+        
+        # BERT 임베딩 품질
+        bert_embedding = components.get('bert_embedding')
+        if bert_embedding is not None:
+            # 임베딩 벡터의 정보량 추정 (엔트로피 기반)
+            embedding_array = np.array(bert_embedding)
+            vector[24] = min(np.var(embedding_array), 1.0)
+        else:
+            vector[24] = 0.0
+        
+        # 교차 검증 점수 (향후 학습 모델에서 활용)
+        vector[25] = 0.0  # 초기값, 학습 후 업데이트
+        
+        # 불확실성 추정
+        uncertainty_indicators = [
+            len(components.get('phrase_result', {}).get('detected_patterns', [])),
+            components.get('morpheme_result', {}).get('morpheme_diversity', 0),
+            len(components.get('word_result', {}).get('detected_words', []))
+        ]
+        vector[26] = min(np.std(uncertainty_indicators) / 5, 1.0)
+        
+        vector[27] = 0.0  # 예약된 차원
+        
+        return vector
+    
+    def _apply_normalization(self, vector: np.ndarray) -> np.ndarray:
+        """벡터 정규화 적용"""
+        
+        normalized_vector = vector.copy()
+        
+        for i, (dim_idx, dim_info) in enumerate(self.dimension_definitions.items()):
+            value = vector[i]
+            dim_type = dim_info['type']
+            dim_range = dim_info['range']
+            
+            # 차원 타입별 정규화
+            if dim_type == 'bipolar':  # [-1, 1]
+                normalized_vector[i] = np.clip(value, -1, 1)
+            elif dim_type == 'unipolar':  # [0, 1]
+                normalized_vector[i] = np.clip(value, 0, 1)
+            elif dim_type == 'extended':  # 확장 범위
+                min_val, max_val = dim_range
+                normalized_vector[i] = np.clip(value, min_val, max_val)
+        
+        return normalized_vector
+    
+    def _ensure_consistency(self, vector: np.ndarray) -> np.ndarray:
+        """차원 간 일관성 보장"""
+        
+        consistent_vector = vector.copy()
+        
+        # 1. 감정 강도와 복잡성 간 일관성
+        # 강한 감정일수록 복잡성이 높아질 수 있음
+        emotion_intensity = abs(vector[0])  # 전체 감정 톤의 절댓값
+        if emotion_intensity > 0.7 and vector[9] < 0.3:  # 강한 감정인데 복잡성이 낮으면
+            consistent_vector[9] = min(vector[9] + 0.2, 1.0)  # 복잡성 조정
+        
+        # 2. 문화적 뉘앙스와 정중함 간 상관관계
+        if vector[10] > 0.7:  # 문화적 뉘앙스가 높으면
+            consistent_vector[11] = max(vector[11], 0.3)  # 최소한의 정중함 보장
+        
+        # 3. 불확실성과 신뢰도 간 역상관 관계
+        if vector[26] > 0.7:  # 불확실성이 높으면
+            consistent_vector[23] = min(vector[23], 0.6)  # 신뢰도 조정
+        
+        return consistent_vector
+
+# =============================================================================
+# 3. 학습 기반 모델 통합
+# =============================================================================
+
+class EmotionLearningFramework:
+    """
+    감정 분석을 위한 학습 프레임워크
+    - 피드백 기반 학습
+    - 모델 성능 평가
+    - 적응적 가중치 조정
+    """
+    
+    def __init__(self):
+        self.models = {}
+        self.training_data = []
+        self.performance_history = []
+        
+    def train_emotion_classifier(self, training_data: List[Dict]):
+        """감정 분류기 학습"""
+        
+        # 특성 추출
+        X = []
+        y = []
+        
+        for sample in training_data:
+            vector = sample['emotion_vector']
+            label = sample['ground_truth_emotion']
+            
+            X.append(vector)
+            y.append(label)
+        
+        X = np.array(X)
+        y = np.array(y)
+        
+        # Random Forest 분류기 학습
+        self.models['emotion_classifier'] = RandomForestClassifier(
+            n_estimators=100,
+            random_state=42
+        )
+        self.models['emotion_classifier'].fit(X, y)
+        
+        # 성능 평가
+        accuracy = self.models['emotion_classifier'].score(X, y)
+        self.performance_history.append({
+            'model': 'emotion_classifier',
+            'accuracy': accuracy,
+            'timestamp': np.datetime64('now')
+        })
+        
+        return accuracy
+    
+    def update_with_feedback(self, emotion_vector: np.ndarray, 
+                           user_feedback: Dict):
+        """사용자 피드백으로 모델 업데이트"""
+        
+        feedback_sample = {
+            'emotion_vector': emotion_vector,
+            'user_rating': user_feedback.get('accuracy_rating', 0),
+            'correct_emotion': user_feedback.get('correct_emotion', None),
+            'feedback_text': user_feedback.get('comments', '')
+        }
+        
+        self.training_data.append(feedback_sample)
+        
+        # 일정 개수 이상 누적되면 재학습
+        if len(self.training_data) % 10 == 0:
+            self._retrain_models()
+    
+    def _retrain_models(self):
+        """누적된 피드백으로 모델 재학습"""
+        
+        if len(self.training_data) < 5:
+            return
+        
+        # 피드백 데이터를 학습 데이터로 변환
+        training_samples = []
+        for sample in self.training_data:
+            if sample['correct_emotion'] is not None:
+                training_samples.append({
+                    'emotion_vector': sample['emotion_vector'],
+                    'ground_truth_emotion': sample['correct_emotion']
+                })
+        
+        if training_samples:
+            accuracy = self.train_emotion_classifier(training_samples)
+            print(f"모델 재학습 완료. 정확도: {accuracy:.3f}")
+
+# =============================================================================
+# 4. 통합 감정 분석 시스템
+# =============================================================================
+
+class IntegratedEmotionAnalysisSystem:
+    """
+    통합된 감정 분석 시스템
+    - 모든 구성요소 통합
+    - 사용하기 쉬운 인터페이스 제공
+    """
+    
+    def __init__(self, model_path: Optional[str] = None):
+        self.hierarchical_analyzer = EnhancedHierarchicalAnalyzer()
+        self.vector_generator = Enhanced28DVectorGenerator()
+        self.learning_framework = EmotionLearningFramework()
+        
+        # 사전 훈련된 모델 로드 (있는 경우)
+        if model_path and Path(model_path).exists():
+            self.load_models(model_path)
+    
+    def analyze_emotion(self, text: str) -> Dict:
+        """통합 감정 분석 실행"""
+        
+        # 1. 계층적 감정 분석
+        hierarchical_result = self.hierarchical_analyzer.analyze_enhanced_hierarchical(text)
+        
+        # 2. 28차원 벡터 생성
+        analysis_components = {
+            'morpheme_result': hierarchical_result['hierarchical_analysis']['morpheme'],
+            'word_result': hierarchical_result['hierarchical_analysis']['word'],
+            'phrase_result': hierarchical_result['hierarchical_analysis']['phrase'],
+            'sentence_result': hierarchical_result['hierarchical_analysis']['sentence'],
+            'discourse_result': hierarchical_result['hierarchical_analysis']['discourse'],
+            'interaction_result': hierarchical_result['interaction_analysis'],
+            'bert_embedding': hierarchical_result['bert_embedding'],
+            'text_length': len(text)
+        }
+        
+        emotion_vector = self.vector_generator.generate_enhanced_vector(analysis_components)
+        
+        # 3. 학습된 모델로 감정 예측 (있는 경우)
+        predicted_emotion = None
+        if 'emotion_classifier' in self.learning_framework.models:
+            predicted_emotion = self.learning_framework.models['emotion_classifier'].predict([emotion_vector])[0]
+        
+        return {
+            'input_text': text,
+            'hierarchical_analysis': hierarchical_result,
+            'emotion_vector_28d': emotion_vector.tolist(),
+            'vector_dimension_info': self.vector_generator.dimension_definitions,
+            'predicted_emotion': predicted_emotion,
+            'confidence_scores': hierarchical_result['confidence_scores'],
+            'processing_metadata': {
+                'analysis_timestamp': str(np.datetime64('now')),
+                'model_version': '2.0',
+                'vector_generator_version': '1.0'
+            }
+        }
+    
+    def add_feedback(self, analysis_result: Dict, user_feedback: Dict):
+        """사용자 피드백 추가"""
+        emotion_vector = np.array(analysis_result['emotion_vector_28d'])
+        self.learning_framework.update_with_feedback(emotion_vector, user_feedback)
+    
+    def save_models(self, save_path: str):
+        """모델 저장"""
+        models_to_save = {
+            'learning_framework': self.learning_framework,
+            'vector_generator_params': self.vector_generator.normalization_params,
+            'hierarchical_analyzer_weights': self.hierarchical_analyzer.attention_weights
+        }
+        
+        with open(save_path, 'wb') as f:
+            pickle.dump(models_to_save, f)
+    
+    def load_models(self, model_path: str):
+        """모델 로드"""
+        try:
+            with open(model_path, 'rb') as f:
+                saved_models = pickle.load(f)
+            
+            self.learning_framework = saved_models['learning_framework']
+            self.vector_generator.normalization_params = saved_models['vector_generator_params']
+            self.hierarchical_analyzer.attention_weights = saved_models['hierarchical_analyzer_weights']
+            
+            print(f"모델 로드 완료: {model_path}")
+        except Exception as e:
+            print(f"모델 로드 실패: {e}")
+
+# =============================================================================
+# 사용 예시
+# =============================================================================
+
+if __name__ == "__main__":
+    # 시스템 초기화
+    emotion_system = IntegratedEmotionAnalysisSystem()
+    
+    # 테스트 텍스트 분석
+    test_text = "오늘 정말 잘했네요. 근데 사실 좀 아쉬운 부분도 있긴 해요. 그래도 나름 최선을 다했으니, 그걸로 만족하려고요."
+    
+    result = emotion_system.analyze_emotion(test_text)
+    
+    print("=== 통합 감정 분석 결과 ===")
+    print(f"입력 텍스트: {result['input_text']}")
+    print(f"28차원 감정 벡터: {np.array(result['emotion_vector_28d']).round(3)}")
+    print(f"예측된 감정: {result['predicted_emotion']}")
+    
+    # 사용자 피드백 시뮬레이션
+    feedback = {
+        'accuracy_rating': 8,  # 10점 만점
+        'correct_emotion': '복합감정',
+        'comments': '대체로 정확하지만 아쉬움의 뉘앙스를 더 잘 캐치했으면 좋겠음'
+    }
+    
+    emotion_system.add_feedback(result, feedback)

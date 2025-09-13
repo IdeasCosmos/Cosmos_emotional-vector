@@ -1,0 +1,339 @@
+# data_pipeline.py
+"""
+SHEMS 데이터 수집, 검증, 학습 파이프라인
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Tuple
+import requests
+import json
+from pathlib import Path
+
+class SHEMSDataPipeline:
+    """데이터 수집 및 전처리 파이프라인"""
+    
+    def __init__(self):
+        self.data_dir = Path("data/")
+        self.data_dir.mkdir(exist_ok=True)
+        
+        # 데이터 소스 정의
+        self.sources = {
+            'korean_emotion': 'https://aihub.or.kr/api/emotion_corpus',
+            'eeg_baseline': 'local://eeg_calibration/',
+            'music_validation': 'local://expert_annotations/'
+        }
+        
+        # 검증 메트릭
+        self.validation_metrics = {
+            'coverage': 0.95,  # 데이터 커버리지 95% 이상
+            'accuracy': 0.90,  # 레이블 정확도 90% 이상
+            'consistency': 0.85  # 일관성 85% 이상
+        }
+    
+    def collect_korean_corpus(self) -> pd.DataFrame:
+        """한국어 감정 코퍼스 수집"""
+        
+        # AI Hub 또는 세종 말뭉치에서 수집
+        corpus_data = []
+        
+        # 샘플 데이터 구조
+        sample = {
+            'text': "오늘 정말 잘했네요",
+            'endings': ['-네요'],
+            'emotion_label': 'surprise',
+            'emotion_vector': [0.25, 0.05, 0.00, 0.30, 0.00, 0.40, -0.05],
+            'irony': False,
+            'context': 'compliment'
+        }
+        
+        # 실제 구현: API 호출 또는 파일 읽기
+        # corpus_data = fetch_from_aihub()
+        
+        df = pd.DataFrame([sample] * 1000)  # 예시
+        
+        # 데이터 검증
+        self._validate_corpus(df)
+        
+        return df
+    
+    def calibrate_eeg_baseline(self, subjects: int = 30) -> Dict:
+        """한국인 피험자 EEG 베이스라인 보정"""
+        
+        calibration_data = {
+            'subjects': subjects,
+            'bands': ['delta', 'theta', 'alpha', 'beta', 'gamma'],
+            'emotions': ['joy', 'sadness', 'anger', 'fear', 'disgust', 'surprise', 'neutral']
+        }
+        
+        # 각 피험자별 측정
+        baseline_matrix = np.zeros((subjects, 5, 7))  # subjects x bands x emotions
+        
+        for subj in range(subjects):
+            for band_idx, band in enumerate(calibration_data['bands']):
+                for emo_idx, emotion in enumerate(calibration_data['emotions']):
+                    # 실제: EEG 측정값
+                    # 여기서는 시뮬레이션
+                    if emotion == 'neutral':
+                        baseline_matrix[subj, band_idx, emo_idx] = 0.0
+                    else:
+                        # 정규분포에서 샘플링 (평균은 YAML 값 사용)
+                        baseline_matrix[subj, band_idx, emo_idx] = np.random.randn() * 0.2
+        
+        # 통계 계산
+        calibration_data['mean'] = np.mean(baseline_matrix, axis=0)
+        calibration_data['std'] = np.std(baseline_matrix, axis=0)
+        calibration_data['confidence_interval'] = self._calculate_ci(baseline_matrix)
+        
+        return calibration_data
+    
+    def validate_music_mapping(self, expert_annotations: List[Dict]) -> Dict:
+        """음악 전문가 검증 데이터"""
+        
+        validation_results = {
+            'chord_emotion_accuracy': 0.0,
+            'progression_appropriateness': 0.0,
+            'cultural_adaptation': 0.0
+        }
+        
+        # 전문가 주석 예시
+        for annotation in expert_annotations:
+            # annotation = {
+            #     'emotion': 'joy',
+            #     'suggested_chord': 'major',
+            #     'expert_chord': 'major',
+            #     'agreement': True
+            # }
+            pass
+        
+        # 일치도 계산
+        total = len(expert_annotations)
+        if total > 0:
+            agreements = sum(1 for a in expert_annotations if a.get('agreement', False))
+            validation_results['chord_emotion_accuracy'] = agreements / total
+        
+        return validation_results
+    
+    def _validate_corpus(self, df: pd.DataFrame) -> bool:
+        """코퍼스 데이터 검증"""
+        
+        required_columns = ['text', 'emotion_label', 'emotion_vector']
+        
+        # 컬럼 존재 확인
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Required column missing: {col}")
+        
+        # 감정 벡터 차원 확인
+        vector_dims = df['emotion_vector'].apply(len).unique()
+        if len(vector_dims) != 1 or vector_dims[0] != 7:
+            raise ValueError("Emotion vectors must be 7-dimensional")
+        
+        # 레이블 분포 확인
+        label_dist = df['emotion_label'].value_counts(normalize=True)
+        if label_dist.max() > 0.5:  # 한 감정이 50% 이상이면 불균형
+            print(f"Warning: Imbalanced emotion distribution: {label_dist.to_dict()}")
+        
+        return True
+    
+    def _calculate_ci(self, data: np.ndarray, confidence: float = 0.95) -> np.ndarray:
+        """신뢰구간 계산"""
+        from scipy import stats
+        
+        mean = np.mean(data, axis=0)
+        sem = stats.sem(data, axis=0)
+        ci = stats.t.interval(confidence, len(data)-1, loc=mean, scale=sem)
+        
+        return np.array(ci)
+    
+    def augment_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """데이터 증강"""
+        
+        augmented = []
+        
+        for _, row in df.iterrows():
+            # 원본
+            augmented.append(row)
+            
+            # 동의어 치환
+            if '행복' in row['text']:
+                new_row = row.copy()
+                new_row['text'] = row['text'].replace('행복', '기쁨')
+                augmented.append(new_row)
+            
+            # 어미 변형
+            endings = ['-네요', '-군요', '-거든요']
+            for ending in endings:
+                if ending not in row['text']:
+                    new_row = row.copy()
+                    new_row['text'] = row['text'] + ending
+                    # 감정 벡터 조정
+                    new_row['emotion_vector'] = self._adjust_emotion_for_ending(
+                        row['emotion_vector'], ending
+                    )
+                    augmented.append(new_row)
+        
+        return pd.DataFrame(augmented)
+    
+    def _adjust_emotion_for_ending(self, base_vector: List[float], 
+                                   ending: str) -> List[float]:
+        """어미에 따른 감정 벡터 조정"""
+        
+        adjustments = {
+            '-네요': [0.1, 0, 0, 0.1, 0, 0.2, -0.05],
+            '-군요': [0.05, 0, 0, 0.05, 0, 0.15, -0.05],
+            '-거든요': [0, 0, 0.15, 0, 0, 0, -0.05]
+        }
+        
+        if ending in adjustments:
+            adjusted = np.array(base_vector) + np.array(adjustments[ending])
+            return adjusted.tolist()
+        
+        return base_vector
+
+class DataQualityMonitor:
+    """데이터 품질 모니터링"""
+    
+    def __init__(self):
+        self.metrics = {
+            'completeness': [],
+            'accuracy': [],
+            'consistency': [],
+            'timeliness': []
+        }
+    
+    def check_quality(self, data: pd.DataFrame) -> Dict:
+        """데이터 품질 체크"""
+        
+        results = {}
+        
+        # 완전성: null 값 비율
+        completeness = 1 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
+        results['completeness'] = completeness
+        self.metrics['completeness'].append(completeness)
+        
+        # 일관성: 감정 벡터 합이 일정 범위 내
+        if 'emotion_vector' in data.columns:
+            vector_sums = data['emotion_vector'].apply(lambda x: sum(np.abs(x)))
+            consistency = len(vector_sums[(vector_sums > 0) & (vector_sums < 5)]) / len(vector_sums)
+            results['consistency'] = consistency
+            self.metrics['consistency'].append(consistency)
+        
+        # 정확성: 레이블과 벡터 일치도
+        if 'emotion_label' in data.columns and 'emotion_vector' in data.columns:
+            accuracy = self._check_label_vector_consistency(data)
+            results['accuracy'] = accuracy
+            self.metrics['accuracy'].append(accuracy)
+        
+        # 시의성: 데이터 최신성
+        if 'timestamp' in data.columns:
+            latest = pd.to_datetime(data['timestamp']).max()
+            days_old = (pd.Timestamp.now() - latest).days
+            timeliness = max(0, 1 - days_old / 30)  # 30일 이내를 최신으로
+            results['timeliness'] = timeliness
+            self.metrics['timeliness'].append(timeliness)
+        
+        return results
+    
+    def _check_label_vector_consistency(self, data: pd.DataFrame) -> float:
+        """레이블과 벡터 일관성 체크"""
+        
+        emotion_indices = {
+            'joy': 0, 'sadness': 1, 'anger': 2,
+            'fear': 3, 'disgust': 4, 'surprise': 5, 'neutral': 6
+        }
+        
+        consistent = 0
+        total = 0
+        
+        for _, row in data.iterrows():
+            if row['emotion_label'] in emotion_indices:
+                idx = emotion_indices[row['emotion_label']]
+                vector = row['emotion_vector']
+                
+                # 해당 감정의 값이 가장 큰지 확인
+                if np.argmax(vector) == idx:
+                    consistent += 1
+                total += 1
+        
+        return consistent / total if total > 0 else 0
+    
+    def generate_report(self) -> Dict:
+        """품질 리포트 생성"""
+        
+        report = {
+            'summary': {},
+            'trends': {},
+            'recommendations': []
+        }
+        
+        for metric, values in self.metrics.items():
+            if values:
+                report['summary'][metric] = {
+                    'mean': np.mean(values),
+                    'std': np.std(values),
+                    'min': np.min(values),
+                    'max': np.max(values)
+                }
+                
+                # 트렌드 분석
+                if len(values) > 1:
+                    trend = 'improving' if values[-1] > values[0] else 'declining'
+                    report['trends'][metric] = trend
+        
+        # 권장사항
+        for metric, summary in report['summary'].items():
+            if summary['mean'] < 0.8:
+                report['recommendations'].append(
+                    f"Improve {metric}: current mean {summary['mean']:.2f} below threshold 0.8"
+                )
+        
+        return report
+
+# 실행 예제
+def run_pipeline():
+    """파이프라인 실행"""
+    
+    pipeline = SHEMSDataPipeline()
+    monitor = DataQualityMonitor()
+    
+    # 1. 한국어 코퍼스 수집
+    print("Collecting Korean corpus...")
+    corpus = pipeline.collect_korean_corpus()
+    quality = monitor.check_quality(corpus)
+    print(f"Corpus quality: {quality}")
+    
+    # 2. 데이터 증강
+    print("\nAugmenting data...")
+    augmented = pipeline.augment_data(corpus)
+    print(f"Original: {len(corpus)}, Augmented: {len(augmented)}")
+    
+    # 3. EEG 베이스라인 보정
+    print("\nCalibrating EEG baseline...")
+    eeg_calibration = pipeline.calibrate_eeg_baseline(subjects=30)
+    print(f"EEG calibration complete for {eeg_calibration['subjects']} subjects")
+    
+    # 4. 음악 검증
+    print("\nValidating music mapping...")
+    expert_annotations = [
+        {'emotion': 'joy', 'suggested_chord': 'major', 'expert_chord': 'major', 'agreement': True},
+        {'emotion': 'sadness', 'suggested_chord': 'minor', 'expert_chord': 'minor', 'agreement': True},
+        {'emotion': 'anger', 'suggested_chord': 'diminished', 'expert_chord': 'dom7', 'agreement': False}
+    ]
+    music_validation = pipeline.validate_music_mapping(expert_annotations)
+    print(f"Music mapping accuracy: {music_validation}")
+    
+    # 5. 품질 리포트
+    print("\nGenerating quality report...")
+    report = monitor.generate_report()
+    print(f"Quality report: {json.dumps(report, indent=2)}")
+    
+    # 6. 데이터 저장
+    augmented.to_parquet(pipeline.data_dir / "korean_emotion_augmented.parquet")
+    with open(pipeline.data_dir / "eeg_calibration.json", 'w') as f:
+        json.dump(eeg_calibration, f, default=str)
+    
+    print("\nPipeline complete!")
+
+if __name__ == "__main__":
+    run_pipeline()

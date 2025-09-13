@@ -1,0 +1,810 @@
+"""
+Quantum Visualization Engine: Advanced multi-dimensional emotion and music visualization
+Provides real-time, interactive visualization of emotion-music transformations
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.patches import Circle, Rectangle, Polygon
+from matplotlib.collections import LineCollection
+import seaborn as sns
+from mpl_toolkits.mplot3d import Axes3D
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+from typing import List, Dict, Optional, Tuple, Any
+import colorsys
+from dataclasses import dataclass
+import json
+from pathlib import Path
+
+# ============================================================================
+# COLOR SCHEMES & DESIGN SYSTEM
+# ============================================================================
+
+class EmotionColorPalette:
+    """Scientifically-derived color mappings for emotions"""
+    
+    # Based on psychological research on color-emotion associations
+    EMOTION_COLORS = {
+        'joy': '#FFD700',        # Gold - warmth, happiness
+        'sadness': '#4169E1',    # Royal Blue - melancholy
+        'anger': '#DC143C',      # Crimson - intensity
+        'fear': '#8B008B',       # Dark Magenta - anxiety
+        'disgust': '#556B2F',    # Dark Olive Green - aversion
+        'surprise': '#FF69B4',   # Hot Pink - unexpected
+        'neutral': '#808080'     # Gray - balance
+    }
+    
+    # Gradient schemes for continuous mapping
+    GRADIENTS = {
+        'valence': ['#8B0000', '#DC143C', '#FFB6C1', '#90EE90', '#32CD32', '#006400'],
+        'arousal': ['#000080', '#4169E1', '#87CEEB', '#FFE4B5', '#FF8C00', '#FF4500'],
+        'complexity': ['#F0F0F0', '#D3D3D3', '#A9A9A9', '#696969', '#2F4F4F', '#000000']
+    }
+    
+    @staticmethod
+    def emotion_to_rgb(emotion_vector: np.ndarray) -> Tuple[float, float, float]:
+        """Convert emotion vector to RGB color"""
+        # Weighted combination of emotion colors
+        rgb = np.zeros(3)
+        
+        for i, (emotion, hex_color) in enumerate(EmotionColorPalette.EMOTION_COLORS.items()):
+            if i < len(emotion_vector):
+                weight = abs(emotion_vector[i])
+                r, g, b = EmotionColorPalette.hex_to_rgb(hex_color)
+                rgb += weight * np.array([r, g, b])
+        
+        # Normalize
+        rgb = rgb / (np.sum(abs(emotion_vector)) + 1e-10)
+        return tuple(np.clip(rgb, 0, 1))
+    
+    @staticmethod
+    def hex_to_rgb(hex_color: str) -> Tuple[float, float, float]:
+        """Convert hex to RGB (0-1 scale)"""
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16)/255 for i in (0, 2, 4))
+    
+    @staticmethod
+    def create_emotion_gradient(emotion1: np.ndarray, emotion2: np.ndarray, steps: int = 100):
+        """Create gradient between two emotion states"""
+        gradient = []
+        for i in range(steps):
+            t = i / (steps - 1)
+            interpolated = (1 - t) * emotion1 + t * emotion2
+            gradient.append(EmotionColorPalette.emotion_to_rgb(interpolated))
+        return gradient
+
+# ============================================================================
+# 2D VISUALIZATION COMPONENTS
+# ============================================================================
+
+class EmotionRadar:
+    """Radar chart visualization for emotion vectors"""
+    
+    def __init__(self, figsize: Tuple[int, int] = (8, 8)):
+        self.figsize = figsize
+        self.emotions = ['Joy', 'Sadness', 'Anger', 'Fear', 'Disgust', 'Surprise', 'Neutral']
+        self.angles = np.linspace(0, 2 * np.pi, len(self.emotions), endpoint=False).tolist()
+        self.angles += self.angles[:1]  # Complete the circle
+        
+    def plot(self, emotion_vectors: Dict[str, np.ndarray], title: str = "Emotion Profile"):
+        """Plot multiple emotion vectors on radar chart"""
+        
+        fig, ax = plt.subplots(figsize=self.figsize, subplot_kw=dict(projection='polar'))
+        
+        for label, vector in emotion_vectors.items():
+            values = vector.tolist()
+            values += values[:1]  # Complete the circle
+            
+            color = EmotionColorPalette.emotion_to_rgb(vector)
+            ax.plot(self.angles, values, 'o-', linewidth=2, label=label, color=color)
+            ax.fill(self.angles, values, alpha=0.25, color=color)
+        
+        ax.set_xticks(self.angles[:-1])
+        ax.set_xticklabels(self.emotions)
+        ax.set_ylim(-1, 1)
+        ax.set_title(title, size=16, weight='bold', pad=20)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax.grid(True, alpha=0.3)
+        
+        return fig
+
+class MusicStructureVisualizer:
+    """Advanced music structure visualization"""
+    
+    def __init__(self):
+        self.section_colors = {
+            'intro': '#E8F4F8',
+            'verse': '#B8E0F0',
+            'chorus': '#88C9E8',
+            'bridge': '#58B2E0',
+            'outro': '#2892D8'
+        }
+        
+    def plot_hierarchical_structure(self, music_data: Dict, figsize: Tuple[int, int] = (14, 8)):
+        """Plot hierarchical music structure with emotion flow"""
+        
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(3, 2, height_ratios=[1, 2, 1], width_ratios=[3, 1])
+        
+        # Top: Tempo and dynamics over time
+        ax_tempo = fig.add_subplot(gs[0, 0])
+        self._plot_tempo_dynamics(ax_tempo, music_data)
+        
+        # Middle: Main structure visualization
+        ax_structure = fig.add_subplot(gs[1, 0])
+        self._plot_music_sections(ax_structure, music_data)
+        
+        # Bottom: Harmonic progression
+        ax_harmony = fig.add_subplot(gs[2, 0])
+        self._plot_harmonic_progression(ax_harmony, music_data)
+        
+        # Right: Emotion wheel
+        ax_emotion = fig.add_subplot(gs[:, 1])
+        self._plot_emotion_wheel(ax_emotion, music_data)
+        
+        plt.suptitle("Music Structure Analysis", fontsize=16, fontweight='bold')
+        plt.tight_layout()
+        
+        return fig
+    
+    def _plot_tempo_dynamics(self, ax, music_data):
+        """Plot tempo and dynamics evolution"""
+        sections = music_data.get('structure', [])
+        
+        if not sections:
+            return
+        
+        x = np.arange(len(sections))
+        tempos = [s.get('tempo', 120) for s in sections]
+        
+        # Smooth interpolation
+        from scipy.interpolate import make_interp_spline
+        if len(x) > 3:
+            x_smooth = np.linspace(0, len(sections)-1, 100)
+            spl = make_interp_spline(x, tempos, k=3)
+            tempo_smooth = spl(x_smooth)
+            
+            ax.plot(x_smooth, tempo_smooth, 'b-', linewidth=2, alpha=0.7)
+        
+        ax.scatter(x, tempos, c='red', s=50, zorder=5)
+        ax.set_xlabel('Section')
+        ax.set_ylabel('Tempo (BPM)')
+        ax.set_title('Temporal Evolution')
+        ax.grid(True, alpha=0.3)
+    
+    def _plot_music_sections(self, ax, music_data):
+        """Plot music sections as blocks"""
+        sections = music_data.get('structure', [])
+        
+        y_pos = 0
+        for i, section in enumerate(sections):
+            section_type = section.get('section', 'verse').lower().split()[0]
+            color = self.section_colors.get(section_type, '#CCCCCC')
+            
+            # Draw section block
+            rect = Rectangle((i, y_pos), 1, 1, 
+                           facecolor=color, 
+                           edgecolor='black', 
+                           linewidth=1)
+            ax.add_patch(rect)
+            
+            # Add text
+            ax.text(i + 0.5, y_pos + 0.5, 
+                   section.get('section', f'Section {i+1}'),
+                   ha='center', va='center', fontsize=9)
+            
+            # Add complexity indicator
+            complexity = section.get('complexity', 0.5)
+            for j in range(int(complexity * 5)):
+                circle = Circle((i + 0.1 + j*0.15, y_pos + 0.9), 
+                              0.05, color='gold', alpha=0.7)
+                ax.add_patch(circle)
+        
+        ax.set_xlim(0, len(sections))
+        ax.set_ylim(-0.5, 1.5)
+        ax.set_xlabel('Time →')
+        ax.set_title('Musical Structure')
+        ax.set_yticks([])
+    
+    def _plot_harmonic_progression(self, ax, music_data):
+        """Plot chord progressions"""
+        sections = music_data.get('structure', [])
+        
+        all_chords = []
+        for section in sections:
+            chords = section.get('chords', ['I', 'IV', 'V', 'I'])
+            all_chords.extend(chords)
+        
+        if not all_chords:
+            return
+        
+        # Create chord network
+        chord_transitions = {}
+        for i in range(len(all_chords) - 1):
+            key = (all_chords[i], all_chords[i+1])
+            chord_transitions[key] = chord_transitions.get(key, 0) + 1
+        
+        # Visualize as flow
+        y_pos = 0.5
+        for i, chord in enumerate(all_chords[:20]):  # Limit display
+            ax.text(i, y_pos, chord, ha='center', va='center', 
+                   fontsize=10, fontweight='bold')
+            
+            if i > 0:
+                ax.arrow(i-0.8, y_pos, 0.6, 0, 
+                        head_width=0.1, head_length=0.1, 
+                        fc='gray', ec='gray', alpha=0.5)
+        
+        ax.set_xlim(-0.5, min(20, len(all_chords)))
+        ax.set_ylim(0, 1)
+        ax.set_xlabel('Progression →')
+        ax.set_title('Harmonic Flow')
+        ax.set_yticks([])
+    
+    def _plot_emotion_wheel(self, ax, music_data):
+        """Plot emotion distribution as wheel"""
+        emotion_vector = music_data.get('emotion_vector', np.zeros(7))
+        
+        # Create pie chart with custom colors
+        colors = [EmotionColorPalette.EMOTION_COLORS[e.lower()] 
+                 for e in ['joy', 'sadness', 'anger', 'fear', 'disgust', 'surprise', 'neutral']]
+        
+        # Normalize to positive values for pie chart
+        values = np.abs(emotion_vector)
+        values = values / values.sum() if values.sum() > 0 else np.ones(7) / 7
+        
+        wedges, texts, autotexts = ax.pie(values, 
+                                          labels=['Joy', 'Sad', 'Anger', 'Fear', 
+                                                 'Disgust', 'Surprise', 'Neutral'],
+                                          colors=colors,
+                                          autopct='%1.1f%%',
+                                          startangle=90)
+        
+        ax.set_title('Emotion Distribution')
+
+# ============================================================================
+# 3D VISUALIZATION COMPONENTS
+# ============================================================================
+
+class EmotionSpace3D:
+    """3D visualization of emotion space"""
+    
+    def __init__(self):
+        self.fig = None
+        self.ax = None
+        
+    def plot_emotion_trajectory(self, emotion_sequence: List[np.ndarray], 
+                               labels: Optional[List[str]] = None):
+        """Plot emotion trajectory in 3D space"""
+        
+        # Reduce to 3D using PCA if needed
+        from sklearn.decomposition import PCA
+        
+        emotions_matrix = np.array(emotion_sequence)
+        
+        if emotions_matrix.shape[1] > 3:
+            pca = PCA(n_components=3)
+            emotions_3d = pca.fit_transform(emotions_matrix)
+        else:
+            emotions_3d = emotions_matrix
+        
+        # Create 3D plot
+        self.fig = plt.figure(figsize=(12, 9))
+        self.ax = self.fig.add_subplot(111, projection='3d')
+        
+        # Plot trajectory
+        for i in range(len(emotions_3d) - 1):
+            color = EmotionColorPalette.emotion_to_rgb(emotion_sequence[i])
+            self.ax.plot(emotions_3d[i:i+2, 0], 
+                        emotions_3d[i:i+2, 1], 
+                        emotions_3d[i:i+2, 2], 
+                        'o-', color=color, markersize=8, linewidth=2)
+        
+        # Add labels if provided
+        if labels:
+            for i, label in enumerate(labels):
+                self.ax.text(emotions_3d[i, 0], emotions_3d[i, 1], emotions_3d[i, 2], 
+                           label, fontsize=8)
+        
+        self.ax.set_xlabel('Valence Axis')
+        self.ax.set_ylabel('Arousal Axis')
+        self.ax.set_zlabel('Complexity Axis')
+        self.ax.set_title('Emotion Trajectory in 3D Space')
+        
+        return self.fig
+    
+    def animate_emotion_flow(self, emotion_sequence: List[np.ndarray], 
+                            interval: int = 100):
+        """Animate emotion flow in 3D"""
+        
+        from sklearn.decomposition import PCA
+        
+        emotions_matrix = np.array(emotion_sequence)
+        
+        if emotions_matrix.shape[1] > 3:
+            pca = PCA(n_components=3)
+            emotions_3d = pca.fit_transform(emotions_matrix)
+        else:
+            emotions_3d = emotions_matrix
+        
+        self.fig = plt.figure(figsize=(12, 9))
+        self.ax = self.fig.add_subplot(111, projection='3d')
+        
+        # Set up plot
+        self.ax.set_xlim(emotions_3d[:, 0].min() - 0.5, emotions_3d[:, 0].max() + 0.5)
+        self.ax.set_ylim(emotions_3d[:, 1].min() - 0.5, emotions_3d[:, 1].max() + 0.5)
+        self.ax.set_zlim(emotions_3d[:, 2].min() - 0.5, emotions_3d[:, 2].max() + 0.5)
+        
+        self.ax.set_xlabel('Valence')
+        self.ax.set_ylabel('Arousal')
+        self.ax.set_zlabel('Complexity')
+        
+        # Animation data
+        self.line, = self.ax.plot([], [], [], 'o-', markersize=8, linewidth=2)
+        self.point, = self.ax.plot([], [], [], 'ro', markersize=12)
+        
+        def init():
+            self.line.set_data([], [])
+            self.line.set_3d_properties([])
+            self.point.set_data([], [])
+            self.point.set_3d_properties([])
+            return self.line, self.point
+        
+        def animate(frame):
+            # Update line
+            self.line.set_data(emotions_3d[:frame+1, 0], emotions_3d[:frame+1, 1])
+            self.line.set_3d_properties(emotions_3d[:frame+1, 2])
+            
+            # Update point
+            self.point.set_data([emotions_3d[frame, 0]], [emotions_3d[frame, 1]])
+            self.point.set_3d_properties([emotions_3d[frame, 2]])
+            
+            # Update color
+            color = EmotionColorPalette.emotion_to_rgb(emotion_sequence[frame])
+            self.line.set_color(color)
+            self.point.set_color(color)
+            
+            return self.line, self.point
+        
+        anim = animation.FuncAnimation(self.fig, animate, init_func=init,
+                                     frames=len(emotions_3d), 
+                                     interval=interval, blit=True)
+        
+        return anim
+
+# ============================================================================
+# INTERACTIVE PLOTLY VISUALIZATIONS
+# ============================================================================
+
+class InteractiveEmotionVisualizer:
+    """Interactive visualizations using Plotly"""
+    
+    def create_emotion_heatmap(self, emotion_matrix: np.ndarray, 
+                              row_labels: List[str] = None,
+                              col_labels: List[str] = None):
+        """Create interactive emotion heatmap"""
+        
+        if col_labels is None:
+            col_labels = ['Joy', 'Sadness', 'Anger', 'Fear', 'Disgust', 'Surprise', 'Neutral']
+        
+        if row_labels is None:
+            row_labels = [f'Sample {i+1}' for i in range(emotion_matrix.shape[0])]
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=emotion_matrix,
+            x=col_labels,
+            y=row_labels,
+            colorscale='RdBu',
+            zmid=0,
+            text=emotion_matrix.round(2),
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            colorbar=dict(title="Emotion Intensity")
+        ))
+        
+        fig.update_layout(
+            title="Emotion Intensity Heatmap",
+            xaxis_title="Emotion Dimensions",
+            yaxis_title="Samples",
+            height=600,
+            width=800
+        )
+        
+        return fig
+    
+    def create_emotion_flow_sankey(self, transitions: Dict[Tuple[str, str], float]):
+        """Create Sankey diagram for emotion transitions"""
+        
+        # Prepare data for Sankey
+        sources = []
+        targets = []
+        values = []
+        labels = []
+        
+        # Get unique emotions
+        unique_emotions = set()
+        for (source, target), value in transitions.items():
+            unique_emotions.add(source)
+            unique_emotions.add(target)
+        
+        emotion_to_idx = {emotion: i for i, emotion in enumerate(sorted(unique_emotions))}
+        labels = sorted(unique_emotions)
+        
+        # Build connections
+        for (source, target), value in transitions.items():
+            sources.append(emotion_to_idx[source])
+            targets.append(emotion_to_idx[target] + len(unique_emotions))
+            values.append(value)
+        
+        # Duplicate labels for target nodes
+        labels = labels + [f"{l} (end)" for l in labels]
+        
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color="black", width=0.5),
+                label=labels,
+                color=[EmotionColorPalette.EMOTION_COLORS.get(l.lower().replace(' (end)', ''), '#888888') 
+                      for l in labels]
+            ),
+            link=dict(
+                source=sources,
+                target=targets,
+                value=values,
+                color='rgba(100, 100, 100, 0.4)'
+            )
+        )])
+        
+        fig.update_layout(
+            title="Emotion Transition Flow",
+            font_size=12,
+            height=600,
+            width=1000
+        )
+        
+        return fig
+    
+    def create_3d_emotion_surface(self, emotion_grid: np.ndarray):
+        """Create 3D surface plot of emotion landscape"""
+        
+        fig = go.Figure(data=[go.Surface(
+            z=emotion_grid,
+            colorscale='Viridis',
+            contours=dict(
+                z=dict(show=True, usecolormap=True, highlightcolor="limegreen", project=dict(z=True))
+            )
+        )])
+        
+        fig.update_layout(
+            title="Emotion Landscape",
+            scene=dict(
+                xaxis_title="Time",
+                yaxis_title="Emotion Dimension",
+                zaxis_title="Intensity",
+                camera=dict(
+                    eye=dict(x=1.5, y=1.5, z=1.3)
+                )
+            ),
+            height=700,
+            width=900
+        )
+        
+        return fig
+    
+    def create_music_emotion_parallel_coordinates(self, data: pd.DataFrame):
+        """Create parallel coordinates plot for music-emotion relationships"""
+        
+        import pandas as pd
+        
+        # Normalize data for better visualization
+        normalized_data = data.copy()
+        for col in normalized_data.select_dtypes(include=[np.number]).columns:
+            col_data = normalized_data[col]
+            normalized_data[col] = (col_data - col_data.min()) / (col_data.max() - col_data.min() + 1e-10)
+        
+        fig = go.Figure(data=go.Parcoords(
+            line=dict(
+                color=normalized_data.get('emotion_intensity', np.zeros(len(normalized_data))),
+                colorscale='Viridis',
+                showscale=True
+            ),
+            dimensions=[
+                dict(label='Tempo', values=normalized_data.get('tempo', [])),
+                dict(label='Valence', values=normalized_data.get('valence', [])),
+                dict(label='Arousal', values=normalized_data.get('arousal', [])),
+                dict(label='Complexity', values=normalized_data.get('complexity', [])),
+                dict(label='Mode', values=normalized_data.get('mode_numeric', []),
+                    tickvals=[0, 1], ticktext=['Minor', 'Major'])
+            ]
+        ))
+        
+        fig.update_layout(
+            title="Music-Emotion Parameter Space",
+            height=500,
+            width=1000
+        )
+        
+        return fig
+
+# ============================================================================
+# REAL-TIME VISUALIZATION
+# ============================================================================
+
+class RealTimeEmotionMonitor:
+    """Real-time emotion monitoring and visualization"""
+    
+    def __init__(self, window_size: int = 100):
+        self.window_size = window_size
+        self.emotion_buffer = []
+        self.music_buffer = []
+        self.timestamps = []
+        
+        # Set up matplotlib for real-time plotting
+        plt.ion()
+        self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
+        
+    def update(self, emotion_vector: np.ndarray, music_params: Dict, timestamp: float):
+        """Update visualization with new data"""
+        
+        # Add to buffers
+        self.emotion_buffer.append(emotion_vector)
+        self.music_buffer.append(music_params)
+        self.timestamps.append(timestamp)
+        
+        # Keep only window_size latest entries
+        if len(self.emotion_buffer) > self.window_size:
+            self.emotion_buffer.pop(0)
+            self.music_buffer.pop(0)
+            self.timestamps.pop(0)
+        
+        # Update plots
+        self._update_emotion_timeline(self.axes[0, 0])
+        self._update_valence_arousal(self.axes[0, 1])
+        self._update_music_params(self.axes[1, 0])
+        self._update_emotion_distribution(self.axes[1, 1])
+        
+        plt.draw()
+        plt.pause(0.01)
+    
+    def _update_emotion_timeline(self, ax):
+        """Update emotion timeline plot"""
+        ax.clear()
+        
+        if not self.emotion_buffer:
+            return
+        
+        emotion_matrix = np.array(self.emotion_buffer)
+        x = np.arange(len(self.emotion_buffer))
+        
+        emotions = ['Joy', 'Sadness', 'Anger', 'Fear', 'Disgust', 'Surprise', 'Neutral']
+        colors = [EmotionColorPalette.EMOTION_COLORS[e.lower()] for e in emotions]
+        
+        for i, (emotion, color) in enumerate(zip(emotions, colors)):
+            ax.plot(x, emotion_matrix[:, i], label=emotion, color=color, linewidth=2)
+        
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Intensity')
+        ax.set_title('Emotion Timeline')
+        ax.legend(loc='upper left', fontsize=8)
+        ax.grid(True, alpha=0.3)
+    
+    def _update_valence_arousal(self, ax):
+        """Update valence-arousal scatter plot"""
+        ax.clear()
+        
+        if not self.emotion_buffer:
+            return
+        
+        valences = []
+        arousals = []
+        colors = []
+        
+        for emotion in self.emotion_buffer:
+            valence = emotion[0] - emotion[1]  # joy - sadness
+            arousal = (emotion[2] + emotion[3] + emotion[5]) / 3
+            
+            valences.append(valence)
+            arousals.append(arousal)
+            colors.append(EmotionColorPalette.emotion_to_rgb(emotion))
+        
+        ax.scatter(valences, arousals, c=colors, s=50, alpha=0.7)
+        
+        # Add trajectory
+        if len(valences) > 1:
+            ax.plot(valences, arousals, 'k-', alpha=0.3, linewidth=1)
+        
+        ax.set_xlabel('Valence')
+        ax.set_ylabel('Arousal')
+        ax.set_title('Emotion Space')
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.axhline(y=0, color='k', linestyle='-', alpha=0.3)
+        ax.axvline(x=0, color='k', linestyle='-', alpha=0.3)
+        ax.grid(True, alpha=0.3)
+    
+    def _update_music_params(self, ax):
+        """Update music parameters plot"""
+        ax.clear()
+        
+        if not self.music_buffer:
+            return
+        
+        tempos = [m.get('tempo', 120) for m in self.music_buffer]
+        x = np.arange(len(tempos))
+        
+        ax.plot(x, tempos, 'b-', linewidth=2)
+        ax.fill_between(x, tempos, alpha=0.3)
+        
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Tempo (BPM)')
+        ax.set_title('Musical Parameters')
+        ax.grid(True, alpha=0.3)
+    
+    def _update_emotion_distribution(self, ax):
+        """Update emotion distribution bar plot"""
+        ax.clear()
+        
+        if not self.emotion_buffer:
+            return
+        
+        # Average emotions over buffer
+        emotion_matrix = np.array(self.emotion_buffer)
+        avg_emotions = emotion_matrix.mean(axis=0)
+        
+        emotions = ['Joy', 'Sad', 'Anger', 'Fear', 'Disgust', 'Surprise', 'Neutral']
+        colors = [EmotionColorPalette.EMOTION_COLORS[e.lower()] for e in ['joy', 'sadness', 
+                 'anger', 'fear', 'disgust', 'surprise', 'neutral']]
+        
+        bars = ax.bar(emotions, avg_emotions, color=colors, alpha=0.7)
+        
+        # Add value labels
+        for bar, val in zip(bars, avg_emotions):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                   f'{val:.2f}', ha='center', va='bottom', fontsize=8)
+        
+        ax.set_ylabel('Average Intensity')
+        ax.set_title('Emotion Distribution')
+        ax.set_ylim(-1, 1)
+        ax.axhline(y=0, color='k', linestyle='-', alpha=0.3)
+        ax.grid(True, alpha=0.3, axis='y')
+    
+    def save_session(self, filepath: Path):
+        """Save visualization session data"""
+        session_data = {
+            'emotions': [e.tolist() for e in self.emotion_buffer],
+            'music': self.music_buffer,
+            'timestamps': self.timestamps
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(session_data, f, indent=2)
+        
+        # Save final plot
+        self.fig.savefig(filepath.with_suffix('.png'), dpi=150, bbox_inches='tight')
+
+# ============================================================================
+# MAIN DEMONSTRATION
+# ============================================================================
+
+def demonstrate_visualization():
+    """Demonstrate all visualization capabilities"""
+    
+    print("="*60)
+    print("QUANTUM VISUALIZATION ENGINE DEMONSTRATION")
+    print("="*60)
+    
+    # Generate sample data
+    np.random.seed(42)
+    
+    # Sample emotion sequence
+    emotion_sequence = []
+    for i in range(20):
+        # Simulate emotional journey
+        t = i / 20
+        joy = 0.5 * np.sin(2 * np.pi * t) + 0.3
+        sadness = 0.3 * np.cos(2 * np.pi * t) + 0.2
+        anger = 0.2 * np.sin(4 * np.pi * t)
+        fear = 0.1 * np.cos(3 * np.pi * t)
+        
+        emotion = np.array([joy, sadness, anger, fear, 0.1, 0.2, 0.3])
+        emotion = emotion / np.linalg.norm(emotion)  # Normalize
+        emotion_sequence.append(emotion)
+    
+    # 1. Radar Chart
+    print("\n1. Creating Emotion Radar Chart...")
+    radar = EmotionRadar()
+    fig1 = radar.plot({
+        'Initial': emotion_sequence[0],
+        'Middle': emotion_sequence[10],
+        'Final': emotion_sequence[-1]
+    })
+    fig1.savefig('emotion_radar.png', dpi=150, bbox_inches='tight')
+    print("   Saved: emotion_radar.png")
+    
+    # 2. Music Structure
+    print("\n2. Creating Music Structure Visualization...")
+    music_data = {
+        'structure': [
+            {'section': 'Intro', 'tempo': 80, 'complexity': 0.3},
+            {'section': 'Verse 1', 'tempo': 120, 'complexity': 0.5},
+            {'section': 'Chorus', 'tempo': 130, 'complexity': 0.7},
+            {'section': 'Verse 2', 'tempo': 120, 'complexity': 0.5},
+            {'section': 'Bridge', 'tempo': 100, 'complexity': 0.8},
+            {'section': 'Chorus', 'tempo': 130, 'complexity': 0.7},
+            {'section': 'Outro', 'tempo': 80, 'complexity': 0.3}
+        ],
+        'emotion_vector': emotion_sequence[-1]
+    }
+    
+    visualizer = MusicStructureVisualizer()
+    fig2 = visualizer.plot_hierarchical_structure(music_data)
+    fig2.savefig('music_structure.png', dpi=150, bbox_inches='tight')
+    print("   Saved: music_structure.png")
+    
+    # 3. 3D Emotion Trajectory
+    print("\n3. Creating 3D Emotion Trajectory...")
+    space3d = EmotionSpace3D()
+    fig3 = space3d.plot_emotion_trajectory(emotion_sequence, 
+                                          labels=[f'T{i}' for i in range(len(emotion_sequence))])
+    fig3.savefig('emotion_3d.png', dpi=150, bbox_inches='tight')
+    print("   Saved: emotion_3d.png")
+    
+    # 4. Interactive Plotly Visualizations
+    print("\n4. Creating Interactive Visualizations...")
+    interactive = InteractiveEmotionVisualizer()
+    
+    # Emotion heatmap
+    emotion_matrix = np.array(emotion_sequence)
+    fig4 = interactive.create_emotion_heatmap(emotion_matrix)
+    fig4.write_html('emotion_heatmap.html')
+    print("   Saved: emotion_heatmap.html")
+    
+    # Emotion transitions
+    transitions = {
+        ('joy', 'surprise'): 0.3,
+        ('surprise', 'fear'): 0.2,
+        ('fear', 'sadness'): 0.4,
+        ('sadness', 'neutral'): 0.5,
+        ('neutral', 'joy'): 0.3
+    }
+    fig5 = interactive.create_emotion_flow_sankey(transitions)
+    fig5.write_html('emotion_flow.html')
+    print("   Saved: emotion_flow.html")
+    
+    # 5. Real-time Monitor (simulation)
+    print("\n5. Simulating Real-time Monitoring...")
+    monitor = RealTimeEmotionMonitor(window_size=50)
+    
+    for i in range(30):
+        emotion = emotion_sequence[i % len(emotion_sequence)]
+        music = {'tempo': 60 + i * 2, 'mode': 'major' if i % 2 == 0 else 'minor'}
+        monitor.update(emotion, music, i * 0.1)
+    
+    monitor.save_session(Path('monitoring_session.json'))
+    print("   Saved: monitoring_session.json and monitoring_session.png")
+    
+    print("\n" + "="*60)
+    print("Visualization demonstration complete!")
+    print("Generated files:")
+    print("  - emotion_radar.png")
+    print("  - music_structure.png")
+    print("  - emotion_3d.png")
+    print("  - emotion_heatmap.html")
+    print("  - emotion_flow.html")
+    print("  - monitoring_session.json")
+    print("  - monitoring_session.png")
+    print("="*60)
+    
+    plt.show()
+
+if __name__ == "__main__":
+    # For non-interactive environments, use Agg backend
+    import matplotlib
+    matplotlib.use('Agg')
+    
+    demonstrate_visualization()

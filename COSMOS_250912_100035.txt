@@ -1,0 +1,656 @@
+"""
+COSMOS: Complete Semantic-Musical Operating System
+A hierarchical emotion-to-music transformation system with bidirectional processing
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any, Protocol
+from enum import Enum, auto
+import numpy as np
+import yaml
+from pathlib import Path
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import json
+
+# ============================================================================
+# CORE NAMING CONVENTIONS & CONSTANTS
+# ============================================================================
+
+class ProcessingLevel(Enum):
+    """Hierarchical processing levels from micro to macro"""
+    QUANTUM = auto()     # Phoneme level (20-200ms)
+    ATOMIC = auto()      # Morpheme level (200-500ms)
+    MOLECULAR = auto()   # Word level (500-1000ms)
+    COMPOUND = auto()    # Phrase level (1-3s)
+    ORGANIC = auto()     # Sentence level (3-10s)
+    ECOSYSTEM = auto()   # Paragraph level (10-60s)
+    COSMOS = auto()      # Complete text/discourse
+
+class EmotionDimension(Enum):
+    """Primary emotion dimensions in z-scale"""
+    JOY = 0
+    SADNESS = 1
+    ANGER = 2
+    FEAR = 3
+    DISGUST = 4
+    SURPRISE = 5
+    NEUTRAL = 6
+    
+class MusicElement(Enum):
+    """Musical elements mapped to linguistic units"""
+    RHYTHM = "rhythm"          # Quantum level
+    DYNAMICS = "dynamics"      # Atomic level
+    PITCH = "pitch"           # Molecular level
+    HARMONY = "harmony"       # Compound level
+    MODE = "mode"            # Organic level
+    FORM = "form"            # Ecosystem level
+    GENRE = "genre"          # Cosmos level
+
+# ============================================================================
+# DATA STRUCTURES
+# ============================================================================
+
+@dataclass
+class EmotionVector:
+    """Standardized 7-dimensional emotion vector with metadata"""
+    values: np.ndarray  # Shape: (7,) in z-scale
+    confidence: float = 1.0
+    source: ProcessingLevel = ProcessingLevel.MOLECULAR
+    timestamp: float = 0.0
+    
+    def __post_init__(self):
+        if isinstance(self.values, list):
+            self.values = np.array(self.values)
+        assert self.values.shape == (7,), f"Invalid emotion vector shape: {self.values.shape}"
+        
+    def dominant_emotion(self) -> EmotionDimension:
+        return EmotionDimension(np.argmax(np.abs(self.values)))
+    
+    def valence(self) -> float:
+        """Positive vs negative emotional tone"""
+        return self.values[EmotionDimension.JOY.value] - \
+               (self.values[EmotionDimension.SADNESS.value] + 
+                self.values[EmotionDimension.ANGER.value] + 
+                self.values[EmotionDimension.FEAR.value] + 
+                self.values[EmotionDimension.DISGUST.value]) / 4
+    
+    def arousal(self) -> float:
+        """Activation level"""
+        return (self.values[EmotionDimension.ANGER.value] + 
+                self.values[EmotionDimension.FEAR.value] + 
+                self.values[EmotionDimension.SURPRISE.value]) / 3
+
+@dataclass
+class MusicParameters:
+    """Complete musical representation"""
+    tempo_bpm: float = 120.0
+    key: str = "C"
+    mode: str = "major"
+    time_signature: Tuple[int, int] = (4, 4)
+    dynamics: str = "mf"  # pp, p, mp, mf, f, ff
+    chord_progression: List[str] = field(default_factory=list)
+    rhythm_pattern: List[float] = field(default_factory=list)
+    melody_contour: List[int] = field(default_factory=list)
+    texture: str = "homophonic"
+    articulation: str = "legato"
+    
+    def to_midi_params(self) -> Dict:
+        """Convert to MIDI-compatible parameters"""
+        dynamics_map = {"pp": 30, "p": 50, "mp": 70, "mf": 85, "f": 100, "ff": 120}
+        return {
+            "tempo": self.tempo_bpm,
+            "velocity": dynamics_map.get(self.dynamics, 85),
+            "time_signature": self.time_signature
+        }
+
+@dataclass 
+class ProcessingNode:
+    """Single processing unit in the hierarchical system"""
+    level: ProcessingLevel
+    content: str
+    emotion: EmotionVector
+    music: MusicParameters
+    children: List['ProcessingNode'] = field(default_factory=list)
+    parent: Optional['ProcessingNode'] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def propagate_up(self) -> EmotionVector:
+        """Bottom-up emotion propagation"""
+        if not self.children:
+            return self.emotion
+        
+        child_emotions = np.array([child.propagate_up().values for child in self.children])
+        weights = np.array([child.emotion.confidence for child in self.children])
+        weights = weights / weights.sum()
+        
+        aggregated = np.average(child_emotions, weights=weights, axis=0)
+        self.emotion.values = 0.7 * self.emotion.values + 0.3 * aggregated
+        return self.emotion
+    
+    def propagate_down(self, context_emotion: EmotionVector):
+        """Top-down context influence"""
+        influence_weight = 0.2  # Context influence strength
+        self.emotion.values = (1 - influence_weight) * self.emotion.values + \
+                              influence_weight * context_emotion.values
+        
+        for child in self.children:
+            child.propagate_down(self.emotion)
+
+# ============================================================================
+# CORE PROCESSING ENGINE
+# ============================================================================
+
+class SemanticProcessor(Protocol):
+    """Protocol for semantic processing at any level"""
+    def process(self, text: str, level: ProcessingLevel) -> ProcessingNode:
+        ...
+
+class HierarchicalEmotionEngine:
+    """Main processing engine with bidirectional hierarchical processing"""
+    
+    def __init__(self, config_path: Optional[Path] = None):
+        self.config = self._load_config(config_path)
+        self.processors: Dict[ProcessingLevel, SemanticProcessor] = {}
+        self.cache = {}
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self._initialize_processors()
+        
+    def _load_config(self, config_path: Optional[Path]) -> Dict:
+        """Load YAML configuration with all mappings"""
+        if config_path and config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        return self._default_config()
+    
+    def _default_config(self) -> Dict:
+        """Default configuration with complete mappings"""
+        return {
+            'eeg_profiles': {
+                'joy': {'delta': -0.10, 'theta': -0.05, 'alpha': 0.35, 'beta': 0.25, 'gamma': 0.15},
+                'sadness': {'delta': 0.05, 'theta': 0.20, 'alpha': -0.25, 'beta': 0.10, 'gamma': 0.05},
+                'anger': {'delta': 0.10, 'theta': 0.15, 'alpha': -0.30, 'beta': 0.40, 'gamma': 0.25},
+                'fear': {'delta': 0.05, 'theta': 0.25, 'alpha': -0.35, 'beta': 0.30, 'gamma': 0.40},
+                'disgust': {'delta': 0.10, 'theta': 0.20, 'alpha': -0.20, 'beta': 0.25, 'gamma': 0.10},
+                'surprise': {'delta': -0.05, 'theta': 0.05, 'alpha': 0.10, 'beta': 0.30, 'gamma': 0.35},
+                'neutral': {'delta': 0.00, 'theta': 0.00, 'alpha': 0.00, 'beta': 0.00, 'gamma': 0.00}
+            },
+            'korean_morphemes': {
+                '-네요': {'vector': [0.25, 0.05, 0.00, 0.30, 0.00, 0.40, -0.05], 'type': 'surprise'},
+                '-군요': {'vector': [0.10, 0.05, 0.00, 0.15, 0.00, 0.30, -0.05], 'type': 'realization'},
+                '-거든요': {'vector': [0.00, 0.00, 0.35, 0.05, 0.00, 0.05, -0.10], 'type': 'assertion'},
+                '-잖아요': {'vector': [0.00, -0.05, 0.25, 0.00, 0.00, 0.10, -0.10], 'type': 'shared_knowledge'}
+            },
+            'chord_mappings': {
+                'major': {'emotion': 'joy', 'strength': 0.60},
+                'minor': {'emotion': 'sadness', 'strength': 0.60},
+                'diminished': {'emotion': 'fear', 'strength': 0.70},
+                'augmented': {'emotion': 'surprise', 'strength': 0.60}
+            }
+        }
+    
+    def _initialize_processors(self):
+        """Initialize specialized processors for each level"""
+        self.processors[ProcessingLevel.QUANTUM] = QuantumProcessor(self.config)
+        self.processors[ProcessingLevel.ATOMIC] = AtomicProcessor(self.config)
+        self.processors[ProcessingLevel.MOLECULAR] = MolecularProcessor(self.config)
+        self.processors[ProcessingLevel.COMPOUND] = CompoundProcessor(self.config)
+        self.processors[ProcessingLevel.ORGANIC] = OrganicProcessor(self.config)
+        self.processors[ProcessingLevel.ECOSYSTEM] = EcosystemProcessor(self.config)
+        self.processors[ProcessingLevel.COSMOS] = CosmosProcessor(self.config)
+    
+    async def process_hierarchical(self, text: str) -> ProcessingNode:
+        """Main hierarchical processing with bidirectional propagation"""
+        
+        # Generate cache key
+        cache_key = hashlib.md5(text.encode()).hexdigest()
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+        
+        # Build hierarchical tree bottom-up
+        root = await self._build_tree(text)
+        
+        # Bidirectional propagation
+        root.propagate_up()  # Bottom-up: aggregate child emotions
+        root.propagate_down(root.emotion)  # Top-down: apply context
+        
+        # Final music generation
+        root.music = self._generate_music(root)
+        
+        # Cache result
+        self.cache[cache_key] = root
+        
+        return root
+    
+    async def _build_tree(self, text: str) -> ProcessingNode:
+        """Build processing tree from text"""
+        # Start with highest level
+        cosmos_node = self.processors[ProcessingLevel.COSMOS].process(text, ProcessingLevel.COSMOS)
+        
+        # Decompose into paragraphs
+        paragraphs = text.split('\n\n')
+        for para_text in paragraphs:
+            if not para_text.strip():
+                continue
+                
+            eco_node = self.processors[ProcessingLevel.ECOSYSTEM].process(
+                para_text, ProcessingLevel.ECOSYSTEM
+            )
+            eco_node.parent = cosmos_node
+            cosmos_node.children.append(eco_node)
+            
+            # Decompose into sentences
+            sentences = self._split_sentences(para_text)
+            for sent_text in sentences:
+                org_node = self.processors[ProcessingLevel.ORGANIC].process(
+                    sent_text, ProcessingLevel.ORGANIC
+                )
+                org_node.parent = eco_node
+                eco_node.children.append(org_node)
+                
+                # Continue decomposition down to quantum level
+                await self._decompose_sentence(org_node, sent_text)
+        
+        return cosmos_node
+    
+    async def _decompose_sentence(self, parent_node: ProcessingNode, text: str):
+        """Decompose sentence into smaller units"""
+        # This would use NLP tools to properly segment
+        # For now, simplified implementation
+        words = text.split()
+        for word in words:
+            mol_node = self.processors[ProcessingLevel.MOLECULAR].process(
+                word, ProcessingLevel.MOLECULAR
+            )
+            mol_node.parent = parent_node
+            parent_node.children.append(mol_node)
+    
+    def _split_sentences(self, text: str) -> List[str]:
+        """Smart sentence splitting considering Korean grammar"""
+        # Simplified - would use proper NLP in production
+        import re
+        sentences = re.split(r'[.!?]\s+', text)
+        return [s.strip() for s in sentences if s.strip()]
+    
+    def _generate_music(self, node: ProcessingNode) -> MusicParameters:
+        """Generate musical parameters from emotional state"""
+        emotion = node.emotion
+        
+        # Map emotion to musical parameters
+        music = MusicParameters()
+        
+        # Tempo based on arousal
+        music.tempo_bpm = 60 + emotion.arousal() * 60  # 60-120 BPM range
+        
+        # Mode based on valence
+        music.mode = "major" if emotion.valence() > 0 else "minor"
+        
+        # Key selection based on dominant emotion
+        key_map = {
+            EmotionDimension.JOY: "C",
+            EmotionDimension.SADNESS: "A",
+            EmotionDimension.ANGER: "D",
+            EmotionDimension.FEAR: "E",
+            EmotionDimension.DISGUST: "F",
+            EmotionDimension.SURPRISE: "G",
+            EmotionDimension.NEUTRAL: "C"
+        }
+        music.key = key_map[emotion.dominant_emotion()]
+        
+        # Dynamics based on intensity
+        intensity = np.linalg.norm(emotion.values)
+        if intensity < 0.3:
+            music.dynamics = "pp"
+        elif intensity < 0.5:
+            music.dynamics = "p"
+        elif intensity < 0.7:
+            music.dynamics = "mp"
+        elif intensity < 0.9:
+            music.dynamics = "mf"
+        elif intensity < 1.1:
+            music.dynamics = "f"
+        else:
+            music.dynamics = "ff"
+        
+        # Generate chord progression
+        music.chord_progression = self._generate_progression(emotion, music.mode)
+        
+        return music
+    
+    def _generate_progression(self, emotion: EmotionVector, mode: str) -> List[str]:
+        """Generate chord progression based on emotion"""
+        if mode == "major":
+            if emotion.valence() > 0.5:
+                return ["I", "V", "vi", "IV"]  # Pop progression
+            else:
+                return ["I", "vi", "IV", "V"]  # Slightly melancholic
+        else:  # minor
+            if emotion.arousal() > 0.5:
+                return ["i", "iv", "VII", "III"]  # Dramatic minor
+            else:
+                return ["i", "iv", "v", "i"]  # Traditional minor
+                
+
+# ============================================================================
+# SPECIALIZED PROCESSORS
+# ============================================================================
+
+class BaseProcessor(SemanticProcessor):
+    """Base class for all level processors"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.level = ProcessingLevel.MOLECULAR
+        
+    def process(self, text: str, level: ProcessingLevel) -> ProcessingNode:
+        emotion = self._analyze_emotion(text)
+        music = self._generate_music(emotion)
+        
+        return ProcessingNode(
+            level=level,
+            content=text,
+            emotion=emotion,
+            music=music,
+            metadata=self._extract_metadata(text)
+        )
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        """Analyze emotion at this processing level"""
+        # Base implementation - override in subclasses
+        return EmotionVector(np.zeros(7))
+    
+    def _generate_music(self, emotion: EmotionVector) -> MusicParameters:
+        """Generate music parameters for this level"""
+        return MusicParameters()
+    
+    def _extract_metadata(self, text: str) -> Dict:
+        """Extract level-specific metadata"""
+        return {"length": len(text)}
+
+class QuantumProcessor(BaseProcessor):
+    """Phoneme-level processor (rhythm focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Analyze phonetic features for emotional content
+        # This would use phonetic analysis in production
+        values = np.random.randn(7) * 0.1  # Small variations
+        return EmotionVector(values, confidence=0.3, source=ProcessingLevel.QUANTUM)
+    
+    def _generate_music(self, emotion: EmotionVector) -> MusicParameters:
+        music = MusicParameters()
+        # Focus on rhythm at quantum level
+        music.rhythm_pattern = [0.25, 0.25, 0.5] * 4  # Example pattern
+        return music
+
+class AtomicProcessor(BaseProcessor):
+    """Morpheme-level processor (dynamics focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Check for Korean morphemes
+        morpheme_config = self.config.get('korean_morphemes', {})
+        
+        for morpheme, data in morpheme_config.items():
+            if morpheme in text:
+                return EmotionVector(
+                    np.array(data['vector']),
+                    confidence=0.7,
+                    source=ProcessingLevel.ATOMIC
+                )
+        
+        return EmotionVector(np.zeros(7), confidence=0.2)
+
+class MolecularProcessor(BaseProcessor):
+    """Word-level processor (pitch focus)"""
+    
+    def __init__(self, config: Dict):
+        super().__init__(config)
+        self.emotion_lexicon = self._load_emotion_lexicon()
+    
+    def _load_emotion_lexicon(self) -> Dict[str, EmotionVector]:
+        """Load word-emotion mappings"""
+        lexicon = {}
+        
+        # Base emotion words
+        base_emotions = {
+            '기쁨': [0.8, -0.1, 0.0, 0.0, 0.0, 0.1, 0.0],
+            '슬픔': [-0.1, 0.8, 0.0, 0.1, 0.0, 0.0, 0.0],
+            '분노': [0.0, 0.0, 0.8, 0.1, 0.1, 0.0, 0.0],
+            '두려움': [0.0, 0.1, 0.0, 0.8, 0.0, 0.1, 0.0],
+            '혐오': [0.0, 0.0, 0.1, 0.0, 0.8, 0.0, 0.1],
+            '놀람': [0.1, 0.0, 0.0, 0.1, 0.0, 0.8, 0.0],
+            '행복': [0.9, -0.1, 0.0, 0.0, 0.0, 0.1, 0.0],
+            '사랑': [0.8, 0.0, 0.0, 0.0, 0.0, 0.1, 0.1]
+        }
+        
+        for word, vector in base_emotions.items():
+            lexicon[word] = EmotionVector(np.array(vector), confidence=0.9)
+        
+        return lexicon
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Check emotion lexicon
+        for word, emotion in self.emotion_lexicon.items():
+            if word in text:
+                return emotion
+        
+        # Default neutral
+        return EmotionVector(np.zeros(7), confidence=0.3)
+
+class CompoundProcessor(BaseProcessor):
+    """Phrase-level processor (harmony focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Analyze phrase-level patterns
+        # Check for idiomatic expressions, collocations
+        
+        # Simplified: aggregate word emotions
+        words = text.split()
+        if len(words) > 1:
+            # Would properly analyze phrase structure
+            values = np.random.randn(7) * 0.3
+            return EmotionVector(values, confidence=0.5, source=ProcessingLevel.COMPOUND)
+        
+        return EmotionVector(np.zeros(7), confidence=0.4)
+
+class OrganicProcessor(BaseProcessor):
+    """Sentence-level processor (mode focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Analyze sentence structure and sentiment
+        
+        # Check sentence type
+        if '?' in text:
+            # Questions often have uncertainty/curiosity
+            values = np.array([0.0, 0.0, 0.0, 0.2, 0.0, 0.3, 0.5])
+        elif '!' in text:
+            # Exclamations have higher arousal
+            values = np.array([0.3, 0.0, 0.2, 0.0, 0.0, 0.4, 0.1])
+        else:
+            # Declarative sentences
+            values = np.array([0.1, 0.1, 0.0, 0.0, 0.0, 0.0, 0.7])
+        
+        return EmotionVector(values, confidence=0.6, source=ProcessingLevel.ORGANIC)
+
+class EcosystemProcessor(BaseProcessor):
+    """Paragraph-level processor (form focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Analyze paragraph coherence and theme
+        sentences = text.split('.')
+        
+        # Topic modeling would go here
+        # For now, simple heuristic
+        if len(sentences) > 3:
+            # Longer paragraphs tend to be more complex
+            complexity_factor = min(len(sentences) / 10, 1.0)
+            values = np.random.randn(7) * complexity_factor
+        else:
+            values = np.zeros(7)
+        
+        return EmotionVector(values, confidence=0.7, source=ProcessingLevel.ECOSYSTEM)
+
+class CosmosProcessor(BaseProcessor):
+    """Document-level processor (genre focus)"""
+    
+    def _analyze_emotion(self, text: str) -> EmotionVector:
+        # Analyze overall document emotion and theme
+        
+        # Document-level features
+        doc_length = len(text)
+        paragraph_count = len(text.split('\n\n'))
+        
+        # Simple heuristic for document emotion
+        if doc_length > 1000:
+            # Longer documents tend to be more neutral/informative
+            values = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+        else:
+            # Shorter texts might be more emotional
+            values = np.random.randn(7) * 0.4
+            values[6] = 0.3  # Some neutrality
+        
+        return EmotionVector(values, confidence=0.8, source=ProcessingLevel.COSMOS)
+
+# ============================================================================
+# OPTIMIZATION & PERFORMANCE
+# ============================================================================
+
+class PerformanceOptimizer:
+    """System-wide performance optimization"""
+    
+    def __init__(self):
+        self.metrics = {
+            'processing_time': [],
+            'memory_usage': [],
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+    
+    def optimize_emotion_computation(self, vectors: List[EmotionVector]) -> EmotionVector:
+        """Optimized emotion vector computation using SIMD operations"""
+        if not vectors:
+            return EmotionVector(np.zeros(7))
+        
+        # Vectorized operations
+        values_matrix = np.array([v.values for v in vectors])
+        weights = np.array([v.confidence for v in vectors])
+        weights = weights / weights.sum()
+        
+        # Weighted average with single matrix operation
+        result = np.dot(weights, values_matrix)
+        
+        return EmotionVector(result, confidence=weights.mean())
+    
+    def parallel_process(self, texts: List[str], engine: HierarchicalEmotionEngine) -> List[ProcessingNode]:
+        """Parallel processing of multiple texts"""
+        import asyncio
+        
+        async def process_batch():
+            tasks = [engine.process_hierarchical(text) for text in texts]
+            return await asyncio.gather(*tasks)
+        
+        return asyncio.run(process_batch())
+
+# ============================================================================
+# INTEGRATION LAYER
+# ============================================================================
+
+class CosmosAPI:
+    """Main API interface for the COSMOS system"""
+    
+    def __init__(self, config_path: Optional[Path] = None):
+        self.engine = HierarchicalEmotionEngine(config_path)
+        self.optimizer = PerformanceOptimizer()
+        
+    async def analyze(self, text: str, options: Dict[str, Any] = None) -> Dict:
+        """Analyze text and return comprehensive results"""
+        
+        # Process hierarchically
+        root_node = await self.engine.process_hierarchical(text)
+        
+        # Extract results at all levels
+        results = {
+            'emotion_vector': root_node.emotion.values.tolist(),
+            'confidence': root_node.emotion.confidence,
+            'music_parameters': {
+                'tempo': root_node.music.tempo_bpm,
+                'key': root_node.music.key,
+                'mode': root_node.music.mode,
+                'dynamics': root_node.music.dynamics,
+                'chord_progression': root_node.music.chord_progression
+            },
+            'hierarchical_analysis': self._extract_hierarchy(root_node),
+            'processing_metadata': {
+                'levels_processed': len(self._get_all_nodes(root_node)),
+                'dominant_emotion': root_node.emotion.dominant_emotion().name,
+                'valence': root_node.emotion.valence(),
+                'arousal': root_node.emotion.arousal()
+            }
+        }
+        
+        return results
+    
+    def _extract_hierarchy(self, node: ProcessingNode) -> Dict:
+        """Extract hierarchical structure for visualization"""
+        return {
+            'level': node.level.name,
+            'content': node.content[:50] + '...' if len(node.content) > 50 else node.content,
+            'emotion': node.emotion.values.tolist(),
+            'music': {
+                'tempo': node.music.tempo_bpm,
+                'key': node.music.key,
+                'mode': node.music.mode
+            },
+            'children': [self._extract_hierarchy(child) for child in node.children]
+        }
+    
+    def _get_all_nodes(self, node: ProcessingNode) -> List[ProcessingNode]:
+        """Get all nodes in the tree"""
+        nodes = [node]
+        for child in node.children:
+            nodes.extend(self._get_all_nodes(child))
+        return nodes
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+async def main():
+    """Demonstration of the COSMOS system"""
+    
+    # Initialize system
+    cosmos = CosmosAPI()
+    
+    # Example text with complex emotional content
+    text = """
+    오늘 정말 잘했네요. 근데 사실 좀 아쉬운 부분도 있긴 해요.
+    그래도 나름 최선을 다했으니, 그걸로 만족하려고요.
+    
+    내일은 더 좋은 결과가 있을 거예요. 화이팅!
+    """
+    
+    # Analyze
+    results = await cosmos.analyze(text)
+    
+    # Display results
+    print("="*60)
+    print("COSMOS EMOTION ANALYSIS RESULTS")
+    print("="*60)
+    print(f"Primary Emotion: {results['processing_metadata']['dominant_emotion']}")
+    print(f"Emotion Vector: {results['emotion_vector']}")
+    print(f"Confidence: {results['confidence']:.2%}")
+    print(f"Valence: {results['processing_metadata']['valence']:.2f}")
+    print(f"Arousal: {results['processing_metadata']['arousal']:.2f}")
+    print("\n" + "="*60)
+    print("MUSICAL TRANSFORMATION")
+    print("="*60)
+    print(f"Tempo: {results['music_parameters']['tempo']:.0f} BPM")
+    print(f"Key: {results['music_parameters']['key']} {results['music_parameters']['mode']}")
+    print(f"Dynamics: {results['music_parameters']['dynamics']}")
+    print(f"Progression: {' → '.join(results['music_parameters']['chord_progression'])}")
+    print("="*60)
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

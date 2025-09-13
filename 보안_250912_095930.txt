@@ -1,0 +1,310 @@
+# security_layer.py
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
+from typing import Optional
+import hashlib
+import secrets
+import os
+import redis
+import json
+
+# 환경 설정
+SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key())
+
+# 암호화 컨텍스트
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+# Redis 연결 (세션 관리)
+redis_client = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=6379,
+    decode_responses=True
+)
+
+class SecurityManager:
+    """SHEMS 보안 관리자"""
+    
+    def __init__(self):
+        self.fernet = Fernet(ENCRYPTION_KEY)
+        self.rate_limiter = RateLimiter(redis_client)
+        self.session_manager = SessionManager(redis_client)
+        
+    # ========== 인증 ==========
+    def verify_password(self, plain_password, hashed_password):
+        """비밀번호 검증"""
+        return pwd_context.verify(plain_password, hashed_password)
+    
+    def get_password_hash(self, password):
+        """비밀번호 해싱"""
+        return pwd_context.hash(password)
+    
+    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None):
+        """JWT 토큰 생성"""
+        to_encode = data.copy()
+        expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
+        to_encode.update({"exp": expire})
+        
+        # 감사 로그
+        self._audit_log("token_created", data.get("sub"))
+        
+        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    async def get_current_user(self, token: str = Depends(oauth2_scheme)):
+        """현재 사용자 검증"""
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise credentials_exception
+                
+            # 세션 검증
+            if not self.session_manager.validate_session(username, token):
+                raise credentials_exception
+                
+        except JWTError:
+            raise credentials_exception
+            
+        return username
+    
+    # ========== 데이터 암호화 ==========
+    def encrypt_emotion_data(self, emotion_data: dict) -> str:
+        """감정 데이터 암호화"""
+        json_data = json.dumps(emotion_data)
+        encrypted = self.fernet.encrypt(json_data.encode())
+        
+        # 무결성 체크섬
+        checksum = hashlib.sha256(encrypted).hexdigest()
+        
+        return {
+            "data": encrypted.decode(),
+            "checksum": checksum,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
+    def decrypt_emotion_data(self, encrypted_data: dict) -> dict:
+        """감정 데이터 복호화"""
+        # 무결성 검증
+        data_bytes = encrypted_data["data"].encode()
+        expected_checksum = hashlib.sha256(data_bytes).hexdigest()
+        
+        if expected_checksum != encrypted_data["checksum"]:
+            raise ValueError("Data integrity check failed")
+        
+        # 복호화
+        decrypted = self.fernet.decrypt(data_bytes)
+        return json.loads(decrypted.decode())
+    
+    # ========== 접근 제어 ==========
+    def check_permission(self, user_role: str, resource: str, action: str) -> bool:
+        """RBAC 권한 체크"""
+        permissions = {
+            "admin": ["*:*"],  # 모든 권한
+            "analyst": ["emotion:read", "report:*"],
+            "user": ["emotion:read:own", "emotion:write:own"]
+        }
+        
+        user_perms = permissions.get(user_role, [])
+        required_perm = f"{resource}:{action}"
+        
+        # 와일드카드 체크
+        for perm in user_perms:
+            if self._match_permission(perm, required_perm):
+                return True
+        
+        return False
+    
+    def _match_permission(self, pattern: str, permission: str) -> bool:
+        """권한 패턴 매칭"""
+        pattern_parts = pattern.split(":")
+        perm_parts = permission.split(":")
+        
+        for i, part in enumerate(pattern_parts):
+            if part == "*":
+                continue
+            if i >= len(perm_parts) or part != perm_parts[i]:
+                return False
+        
+        return True
+    
+    # ========== 감사 로깅 ==========
+    def _audit_log(self, action: str, user: str, details: dict = None):
+        """보안 감사 로그"""
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "action": action,
+            "user": user,
+            "details": details or {},
+            "ip": self._get_client_ip()
+        }
+        
+        # Redis에 저장 (TTL 30일)
+        redis_client.setex(
+            f"audit:{datetime.utcnow().timestamp()}",
+            30 * 24 * 3600,
+            json.dumps(log_entry)
+        )
+    
+    def _get_client_ip(self):
+        """클라이언트 IP 추출"""
+        # 실제 구현에서는 request 컨텍스트에서 추출
+        return "127.0.0.1"
+
+class RateLimiter:
+    """API 속도 제한"""
+    
+    def __init__(self, redis_client):
+        self.redis = redis_client
+        
+    async def check_rate_limit(self, key: str, limit: int = 100, window: int = 60):
+        """속도 제한 체크 (슬라이딩 윈도우)"""
+        now = datetime.utcnow().timestamp()
+        pipeline = self.redis.pipeline()
+        
+        # 오래된 항목 제거
+        pipeline.zremrangebyscore(key, 0, now - window)
+        # 현재 요청 추가
+        pipeline.zadd(key, {str(now): now})
+        # 카운트
+        pipeline.zcard(key)
+        # TTL 설정
+        pipeline.expire(key, window)
+        
+        results = pipeline.execute()
+        request_count = results[2]
+        
+        if request_count > limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded: {limit} requests per {window} seconds"
+            )
+        
+        return request_count
+
+class SessionManager:
+    """세션 관리"""
+    
+    def __init__(self, redis_client):
+        self.redis = redis_client
+        self.session_ttl = 3600  # 1시간
+        
+    def create_session(self, username: str, token: str) -> str:
+        """세션 생성"""
+        session_id = secrets.token_urlsafe(32)
+        session_data = {
+            "username": username,
+            "token": token,
+            "created_at": datetime.utcnow().isoformat(),
+            "last_activity": datetime.utcnow().isoformat()
+        }
+        
+        # Redis에 저장
+        self.redis.setex(
+            f"session:{session_id}",
+            self.session_ttl,
+            json.dumps(session_data)
+        )
+        
+        # 사용자별 세션 목록
+        self.redis.sadd(f"user_sessions:{username}", session_id)
+        
+        return session_id
+    
+    def validate_session(self, username: str, token: str) -> bool:
+        """세션 유효성 검증"""
+        user_sessions = self.redis.smembers(f"user_sessions:{username}")
+        
+        for session_id in user_sessions:
+            session_data = self.redis.get(f"session:{session_id}")
+            if session_data:
+                data = json.loads(session_data)
+                if data["token"] == token:
+                    # 활동 시간 업데이트
+                    data["last_activity"] = datetime.utcnow().isoformat()
+                    self.redis.setex(
+                        f"session:{session_id}",
+                        self.session_ttl,
+                        json.dumps(data)
+                    )
+                    return True
+        
+        return False
+    
+    def revoke_session(self, session_id: str):
+        """세션 취소"""
+        session_data = self.redis.get(f"session:{session_id}")
+        if session_data:
+            data = json.loads(session_data)
+            username = data["username"]
+            
+            # 세션 삭제
+            self.redis.delete(f"session:{session_id}")
+            self.redis.srem(f"user_sessions:{username}", session_id)
+
+# ========== API 보안 미들웨어 ==========
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import logging
+
+def setup_security_middleware(app: FastAPI):
+    """보안 미들웨어 설정"""
+    
+    # CORS 설정
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
+    
+    # 신뢰할 수 있는 호스트
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+    )
+    
+    # 보안 헤더
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+    
+    # SQL 인젝션 방지
+    @app.middleware("http")
+    async def validate_input(request, call_next):
+        # 위험한 패턴 체크
+        dangerous_patterns = ["<script", "DROP TABLE", "SELECT * FROM", "'; --"]
+        
+        body = await request.body()
+        if body:
+            body_str = body.decode()
+            for pattern in dangerous_patterns:
+                if pattern in body_str:
+                    logging.warning(f"Potential injection attempt: {pattern}")
+                    return HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid input detected"
+                    )
+        
+        response = await call_next(request)
+        return response

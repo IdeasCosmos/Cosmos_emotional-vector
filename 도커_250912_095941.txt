@@ -1,0 +1,284 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # ========== 핵심 서비스 ==========
+  emotion-engine:
+    build:
+      context: ./services/emotion-engine
+      dockerfile: Dockerfile
+    container_name: shems-emotion-engine
+    environment:
+      - USE_GPU=true
+      - REDIS_HOST=redis
+      - DB_HOST=postgres
+    volumes:
+      - ./data/models:/app/models
+      - emotion-cache:/app/cache
+    ports:
+      - "8001:8000"
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  korean-processor:
+    build:
+      context: ./services/korean-processor
+      dockerfile: Dockerfile
+    container_name: shems-korean-processor
+    environment:
+      - REDIS_HOST=redis
+      - MODEL_PATH=/app/models
+    volumes:
+      - ./data/korean_models:/app/models
+    ports:
+      - "8002:8000"
+    depends_on:
+      - redis
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  frequency-analyzer:
+    build:
+      context: ./services/frequency-analyzer
+      dockerfile: Dockerfile
+    container_name: shems-frequency-analyzer
+    environment:
+      - SAMPLE_RATE=22050
+      - BUFFER_SIZE=2048
+      - REDIS_HOST=redis
+    ports:
+      - "8003:8000"
+    depends_on:
+      - redis
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== API Gateway ==========
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: shems-api-gateway
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - EMOTION_ENGINE_URL=http://emotion-engine:8000
+      - KOREAN_PROCESSOR_URL=http://korean-processor:8000
+      - FREQUENCY_ANALYZER_URL=http://frequency-analyzer:8000
+    ports:
+      - "80:8000"
+      - "443:8443"
+    volumes:
+      - ./ssl:/app/ssl
+    depends_on:
+      - emotion-engine
+      - korean-processor
+      - frequency-analyzer
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== 실시간 스트리밍 ==========
+  streaming-server:
+    build:
+      context: ./services/streaming
+      dockerfile: Dockerfile
+    container_name: shems-streaming
+    environment:
+      - WEBSOCKET_PORT=9000
+      - REDIS_HOST=redis
+    ports:
+      - "9000:9000"
+    depends_on:
+      - redis
+      - emotion-engine
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== 데이터 저장소 ==========
+  postgres:
+    image: postgres:14-alpine
+    container_name: shems-postgres
+    environment:
+      - POSTGRES_DB=shems
+      - POSTGRES_USER=${DB_USER:-shems}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: shems-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== 모니터링 ==========
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: shems-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: shems-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== 로그 수집 ==========
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.5.0
+    container_name: shems-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.5.0
+    container_name: shems-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - shems-network
+    restart: unless-stopped
+
+  # ========== 개발 도구 ==========
+  jupyter:
+    build:
+      context: ./services/jupyter
+      dockerfile: Dockerfile
+    container_name: shems-jupyter
+    environment:
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./data:/home/jovyan/data
+    ports:
+      - "8888:8888"
+    networks:
+      - shems-network
+    profiles:
+      - dev
+
+networks:
+  shems-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  emotion-cache:
+  prometheus-data:
+  grafana-data:
+  elasticsearch-data:
+
+# ========== Dockerfile.emotion-engine ==========
+# services/emotion-engine/Dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# CUDA 지원 (선택적)
+RUN apt-get update && apt-get install -y \
+    libsndfile1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# ========== Dockerfile.korean-processor ==========
+# services/korean-processor/Dockerfile
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# 한국어 처리 의존성
+RUN apt-get update && apt-get install -y \
+    g++ \
+    openjdk-11-jdk \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install konlpy jpype1
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# ========== Dockerfile.streaming ==========
+# services/streaming/Dockerfile
+FROM node:16-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+
+EXPOSE 9000
+
+CMD ["node", "server.js"]
