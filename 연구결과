@@ -1,0 +1,260 @@
+# 계층적 감정 분석 및 EEG 기반 감정 인식 시스템 종합 분석
+
+## 1. 계층적 감정 분석 시스템 현황 (2023-2024)
+
+### 최신 Hierarchical Emotion Analysis 시스템
+
+**TBDM-Net (Temporally-Aware Bidirectional Dense Multi-Scale Network)**
+- **구조**: 양방향 확장 컨볼루션의 다층 밀집 연결 + 동적 선형 커널 융합 [arXiv](https://arxiv.org/abs/2409.10056)
+- **성능 향상**: 기준 대비 가중 정확도 **6.55-23.05%** 개선, 비가중 정확도 **5.70-17.83%** 개선
+- **처리 속도**: 실시간 처리 가능한 최적화된 양방향 특징 추출
+- **응용**: 음성 감정 인식에서 state-of-the-art 달성 [arXiv](https://arxiv.org/abs/2409.10056)
+
+**Bidirectional Cross-Modal Transformer (BCMT)**
+- **아키텍처**: EEG-fNIRS 융합을 위한 양방향 어텐션 메커니즘 [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0957417424029488)
+- **처리 방식**: 공동 모달 표현에서 양방향 깊은 융합 [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S0957417424029488)
+- **성능**: 교차 주체 감정 인식에서 최고 성능
+- **지연시간**: 실시간 뇌-컴퓨터 인터페이스 응용에 최적화
+
+**HiTrans (Hierarchical Transformers)**
+- **계층 구조**: 
+  - 저수준: BERT 기반 토큰 처리 트랜스포머
+  - 고수준: 문맥 통합 트랜스포머
+- **성능**: 대화형 감정 데이터셋에서 기존 최고 모델 능가
+- **처리 레벨**: 토큰 → 구문 → 문장 → 문서 계층적 처리
+
+### 한국어 형태소/어미 감정 분석 연구
+
+**KEmoFact 시스템 (2023)**
+- **데이터셋**: 16,532개 한국어 감정-요인 쌍 [PubMed Central](https://pmc.ncbi.nlm.nih.gov/articles/PMC10613607/)
+- **감정 카테고리**: 22개 (원래 32개에서 축소)
+- **아키텍처**: BIO 태깅을 사용한 토큰 분류 [PubMed Central](https://pmc.ncbi.nlm.nih.gov/articles/PMC10613607/)
+- **최고 성능 모델**: KcELECTRA-base
+- **처리 속도**: 128 토큰 시퀀스 길이로 실시간 처리 가능
+
+**한국어 형태소 기반 시스템 성능**
+- **HDECS (한국 하이브리드 시스템)**: **90% 정확도** vs KLUE/roBERTa의 81% (**11% 개선**) [MDPI](https://www.mdpi.com/1424-8220/23/23/9333) [PubMed Central](https://pmc.ncbi.nlm.nih.gov/articles/PMC10708648/)
+- **Transformer 기반 한국어 형태소 분석기**: 오류 감소율 **20% 이상 개선** [Wiley Online Library](https://onlinelibrary.wiley.com/doi/full/10.4218/etrij.2023-0364)
+- **Korean Target-Attention 모델**: 다중 타겟 다중 감정 샘플에서 F1 **0.72% 개선** [MDPI](https://www.mdpi.com/2227-7390/12/11/1637)
+
+## 2. EEG 기반 감정 인식 시스템 최신 성과
+
+### 2024년 최신 EEG 감정 인식 시스템과 정확도
+
+**Modified Convolutional Fuzzy Neural Network (CFNN)**
+- **성능**: DEAP 데이터셋에서 각성도 **98.21%**, 쾌감도 **98.08%** 정확도 [nature](https://www.nature.com/articles/s41598-024-60977-9) [Nature](https://www.nature.com/articles/s41598-024-60977-9)
+- **아키텍처**: CNN + 퍼지 신경망 하이브리드 [nature](https://www.nature.com/articles/s41598-024-60977-9)
+- **기술 사양**:
+  - 1D-CNN (64, 32 필터) [nature](https://www.nature.com/articles/s41598-024-60977-9)
+  - 커널 크기: 5×5, 3×3 [nature](https://www.nature.com/articles/s41598-024-60977-9)
+  - 학습률: 0.01, 배치 크기: 256, 100 에포크 [nature](https://www.nature.com/articles/s41598-024-60977-9)
+
+**실시간 EEG 시스템 (신경인문학용)**
+- **정확도**: **94%** (문헌 기준선 88% 대비 개선) [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full) [Frontiers](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **처리 속도**: **5초마다 실시간 처리** [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **하드웨어**: OpenBCI Ultracortex IV (8채널) [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **특징 추출**: 최적화된 34개 특징 (원래 160개에서 축소) [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+
+**Hybrid Deep Learning + Meta-heuristic 최적화**
+- **아키텍처**: ABC-GWO + Hybrid CNN-LSTM [Nature](https://www.nature.com/articles/s41598-024-80448-5)
+- **성능**: 긍정/중립/부정 감정에서 **90% 이상** 정확도
+
+### Goertzel Algorithm을 사용한 EEG 분석
+
+**알고리즘 특징**:
+- **계산 효율성**: 특정 주파수 분석에서 FFT보다 효율적 [Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm) [Wireless Pi](https://wirelesspi.com/goertzel-algorithm-evaluating-dft-without-dft/)
+- **구조**: 직접형 구조의 2차 IIR 필터 [Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm)
+- **장점**: 반복당 단일 실수 계수, 실수 연산 사용 [Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm)
+- **응용**: 임베디드 시스템과 실시간 처리에 적합 [Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm)
+
+**EEG 특화 응용**:
+- **표적 주파수 분석**: 뇌파 주파수 대역 (알파, 베타, 감마) 효율적 추출 [IntechOpen](https://www.intechopen.com/chapters/15939) [Springer](https://link.springer.com/article/10.1007/s10462-025-11126-9)
+- **실시간 처리**: 연속 EEG 모니터링 시스템에 적합 [IntechOpen](https://www.intechopen.com/chapters/15939)
+- **처리 속도**: 단일 주파수 탐지에 선형 복잡도 [Wikipedia](https://en.wikipedia.org/wiki/Goertzel_algorithm)
+
+### Kalman Filtering을 적용한 EEG 노이즈 제거
+
+**SMOA-AKF 구현**
+- **기술 사양**: EEG 비선형성을 위한 마르코프 자기회귀 모델 [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S1746809423006468)
+- **최적화**: 매개변수 최적화를 위한 군집 기반 SMOA [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S1746809423006468)
+- **성능**: -10 dB AWGN에서 기존 방법 대비 **상당한 개선** [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S1746809423006468)
+
+**노이즈 제거 기법**:
+- **표적 아티팩트**: EMG, EOG, 전력선 간섭, 가우시안 백색 잡음 [arXiv](https://ar5iv.labs.arxiv.org/html/2308.02437) [Nature](https://www.nature.com/articles/s41598-024-80448-5)
+- **성능 지표**: **상당한 MSE 감소**와 **SNR 개선** [IEEE Xplore](https://ieeexplore.ieee.org/document/8488120/)
+- **윈도우 최적화**: 300ms에서 4분으로 증가 시 성능 향상 [IEEE Xplore](https://ieeexplore.ieee.org/document/8488120/)
+
+### 실시간 EEG 감정 분석 시스템 처리 속도
+
+**처리 속도 벤치마크**:
+- **지연시간**: 감정 예측을 위한 **5초 처리 윈도우** [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **업데이트 속도**: 128Hz 샘플링으로 연속 실시간 처리 [Frontiers](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2020.00040/full)
+- **하드웨어 요구사항**:
+  - Intel Core i5-5200U CPU @ 2.20GHz
+  - 64GB RAM
+  - NVIDIA GeForce 840M [Frontiers](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2020.00040/full)
+
+**시스템 아키텍처 최적화**:
+- **특징 선택**: 속도를 위해 160개에서 34개 특징으로 축소 [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **모델 선택**: 정확도와 속도 균형을 위한 Extra-Trees [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **채널 최적화**: 8채널 구성 (측두, 전두, 두정, 후두) [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+
+## 3. BERT와의 성능/속도 비교 분석
+
+### BERT vs 계층적 감정 분석 성능 비교
+
+**BERT 계열 성능**:
+- **BERT-base**: ISEAR 데이터셋에서 **70.09% 정확도** [ResearchGate](https://www.researchgate.net/publication/346443459_Comparative_Analyses_of_BERT_RoBERTa_DistilBERT_and_XLNet_for_Text-based_Emotion_Recognition)
+- **RoBERTa**: **74.31% 정확도** (트랜스포머 모델 중 최고) [ResearchGate](https://www.researchgate.net/publication/346443459_Comparative_Analyses_of_BERT_RoBERTa_DistilBERT_and_XLNet_for_Text-based_Emotion_Recognition)
+- **XLNet**: **72.99% 정확도** [ResearchGate](https://www.researchgate.net/publication/346443459_Comparative_Analyses_of_BERT_RoBERTa_DistilBERT_and_XLNet_for_Text-based_Emotion_Recognition)
+- **DistilBERT**: **66.93% 정확도** (가장 낮지만 효율적) [ResearchGate](https://www.researchgate.net/publication/346443459_Comparative_Analyses_of_BERT_RoBERTa_DistilBERT_and_XLNet_for_Text-based_Emotion_Recognition)
+
+**하이브리드 BERT 모델**:
+- **Opinion-BERT**: 감정 정확도 **96.77%**, 상태 분류 **94.22%** [Nature](https://www.nature.com/articles/s41598-025-86124-6)
+- **BERT-BiLSTM-BiGRU**: 데이터셋별 **83.74-91.72%** 정확도 [SpringerOpen](https://journalofbigdata.springeropen.com/articles/10.1186/s40537-023-00781-w) [springeropen](https://journalofbigdata.springeropen.com/articles/10.1186/s40537-023-00781-w)
+
+**계층적 대안**:
+- **Hierarchical Attention Networks**: 마이크로-F1 **55.73%**, 매크로-F1 **40.03%** [PubMed Central](https://pmc.ncbi.nlm.nih.gov/articles/PMC7877378/)
+- **한국어 HDECS 시스템**: **90% 정확도** vs KLUE/roBERTa의 **81%** (**11% 개선**) [MDPI](https://www.mdpi.com/1424-8220/23/23/9333) [PubMed Central](https://pmc.ncbi.nlm.nih.gov/articles/PMC10708648/)
+
+### 처리 속도: BERT 추론 시간 vs 경량 모델
+
+**BERT 추론 시간**:
+- **CPU 성능**: 호출당 **153ms** (Redis 벤치마크), 1,500 샘플에 **69.4-70.5초** [Redis](https://redis.io/learn/howtos/redisai/bert-qa-benchmarking-with-redisai-and-redisgears)
+- **GPU 최적화**: NVIDIA T4에서 **2.2ms** (CPU 대비 17배 빠름), A100 TensorRT 8.0에서 **1.2ms** [NVIDIA Developer](https://developer.nvidia.com/blog/nvidia-slashes-bert-training-and-inference-times/) [NVIDIA Developer](https://developer.nvidia.com/blog/real-time-nlp-with-bert-using-tensorrt-updated/)
+- **표준 BERT-base**: CPU 인스턴스에서 **수백 밀리초** [GetStream](https://getstream.io/blog/optimize-transformer-inference/)
+
+**경량 모델 성능**:
+- **DistilBERT**: BERT보다 **60% 빠름**, [Medium](https://medium.com/huggingface/distilbert-8cf3380435b5) [arXiv](https://ar5iv.labs.arxiv.org/html/1910.01108) 토큰화 제외 시 **71% 빠름** [arXiv +2](https://ar5iv.labs.arxiv.org/html/1910.01108)
+- **BERT-Emotion (엣지 모델)**: 약 **20MB**, 실시간 추론 가능 [Hugging Face](https://huggingface.co/boltuix/bert-emotion)
+- **경량 BERT 변형**: 양자화 최적화로 **10ms 미만** 추론 시간
+
+### 모델 크기와 메모리 사용량 비교
+
+**BERT 계열**:
+- **BERT-base**: **400MB 이상** 메모리, **1.1억** 매개변수 [GetStream](https://getstream.io/blog/optimize-transformer-inference/)
+- **RoBERTa**: BERT와 유사 크기, 훈련 데이터 **160GB** vs **16GB**
+- **DistilBERT**: **40% 더 작음** (6,600만 매개변수), [arXiv](https://ar5iv.labs.arxiv.org/html/1910.01108) **300MB 미만** 메모리 [GetStream](https://getstream.io/blog/optimize-transformer-inference/) [arXiv](https://arxiv.org/abs/1910.01108)
+
+**경량 대안**:
+- **BERT-mini**: 빠른 추론을 위한 **1,120만** 매개변수 [Hugging Face](https://huggingface.co/Varnikasiva/sentiment-classification-bert-mini)
+- **BERT-Emotion**: 약 **600만** 매개변수, 양자화 시 약 **20MB** [Hugging Face](https://huggingface.co/boltuix/bert-emotion)
+- **모바일 최적화 모델**: 성능 손실 없이 **25MB**
+
+## 4. 벤치마크 및 성능 지표 상세 분석
+
+### 감정 분석 표준 벤치마크
+
+**텍스트 기반 감정 탐지 (2024년 통합 프레임워크)**:
+- **CARER 데이터셋**: **91% F1-macro** (최고 성능) [aclanthology](https://aclanthology.org/2024.genbench-1.13.pdf)
+- **TweetEval**: **80% F1-macro** [aclanthology](https://aclanthology.org/2024.genbench-1.13.pdf)
+- **GoEmotions**: Ekman 분류법에서 **65% F1-macro** [aclanthology](https://aclanthology.org/2024.genbench-1.13.pdf) [Hugging Face](https://huggingface.co/SchuylerH/bert-multilingual-go-emtions)
+- **성능 범위**: 데이터셋에 따라 **31-91% F1-macro** 변동 [ResearchGate](https://www.researchgate.net/publication/386188227_Towards_a_new_Benchmark_for_Emotion_Detection_in_NLP_A_Unifying_Framework_of_Recent_Corpora)
+
+**음성 감정 인식 벤치마크 (RAVDESS)**:
+- **Xception 모델**: **98% 전체 정확도**, **2% 오분류율** [MDPI](https://www.mdpi.com/2073-431X/13/12/315)
+- **정밀도**: **91.99%** [MDPI](https://www.mdpi.com/2073-431X/13/12/315)
+- **민감도**: **91.78%** [MDPI](https://www.mdpi.com/2073-431X/13/12/315)
+- **특이도**: **98.68%** [MDPI](https://www.mdpi.com/2073-431X/13/12/315)
+- **F1-점수**: **91.83%** [MDPI](https://www.mdpi.com/2073-431X/13/12/315)
+
+### EEG 감정 인식 벤치마크 성능
+
+**DEAP 데이터셋 최신 결과 (2024)**:
+- **MS-iMamba**: **94.86% 정확도** (4채널 EEG) [CatalyzeX](https://www.catalyzex.com/s/Deap)
+- **MobileNet RNN**: 15클래스에서 **85.95%** 평균 정확도, 9클래스에서 **96.29%** [ResearchGate](https://www.researchgate.net/figure/Comparison-of-the-average-accuracies-of-DEAP-and-SEED-datasets-of-deep-learning-based_fig12_367283496)
+- **SST-CRAM**: 각성도 **98.63%**, 쾌감도 **98.66%**
+- **교차 검증**: 쾌감도 **96.96%**, 각성도 **97.17%**, 지배성 **97.50%** [Frontiers](https://www.frontiersin.org/journals/computational-neuroscience/articles/10.3389/fncom.2024.1416494/full)
+
+**SEED 데이터셋 결과**:
+- **DAMGCN**: 주체 의존적 **99.42%**, 주체 독립적 **73.21%** [Frontiers](https://www.frontiersin.org/journals/computational-neuroscience/articles/10.3389/fncom.2024.1416494/full) [Frontiers](https://www.frontiersin.org/journals/computational-neuroscience/articles/10.3389/fncom.2021.758212/full)
+- **MS-iMamba**: **91.36% 정확도** (4채널) [CatalyzeX](https://www.catalyzex.com/s/Deap)
+- **BiLSTM-AttGW**: **98.28% 정확도** [CatalyzeX](https://www.catalyzex.com/s/Deap)
+
+**AMIGOS 데이터셋**: 각성도 **85-95%**, 쾌감도 **90-93%** 정확도 범위 [ResearchGate](https://www.researchgate.net/figure/Comparison-of-the-average-accuracies-of-DEAP-and-SEED-datasets-of-deep-learning-based_fig12_367283496)
+
+### 처리 지연시간 및 동시 처리량
+
+**실시간 처리 요구사항**:
+- **시각적 반응 시간**: **13ms** 최소 (인지 한계) [PubNub](https://www.pubnub.com/blog/how-fast-is-realtime-human-perception-and-technology/)
+- **실시간 임계값**: 최적 성능을 위해 **50ms 미만** [PubNub](https://www.pubnub.com/blog/how-fast-is-realtime-human-perception-and-technology/)
+- **게임 응용**: **100ms** 지연시간에서 성능 저하 측정 가능 [PubNub](https://www.pubnub.com/blog/how-fast-is-realtime-human-perception-and-technology/)
+
+**EEG 처리 지연시간**:
+- **최적 윈도우**: 정확한 분류를 위한 **2초** EEG 세그먼트
+- **처리 시간**: 단기 이벤트에 **10초 미만** [Nature](https://www.nature.com/articles/srep04998)
+- **시간 해상도**: 감정 대 중립 장면 구분에 **250-300ms** [ScienceDirect](https://www.sciencedirect.com/science/article/abs/pii/S014976342500003X)
+
+## 5. 유사 상용 시스템 기술 비교
+
+### EEG 기반 제품 상세 스펙
+
+**Emotiv EPOC X**
+- **채널**: **14개** EEG 센서 (10-20 시스템 준수) [Frontiers](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2020.00040/full)
+- **샘플링**: 내부 **2048Hz**, 다운샘플링 **128/256 SPS** [Frontiers](https://www.frontiersin.org/journals/neuroscience/articles/10.3389/fnins.2020.00040/full)
+- **해상도**: **0.51µV** (14비트), **0.1275µV** (16비트 모드)
+- **대역폭**: **0.16-43Hz** (50Hz/60Hz 디지털 노치 필터)
+- **배터리**: **595mAh**, USB **12시간**/Bluetooth **6시간**
+- **가격**: 약 **$849-999**
+
+**NeuroSky MindWave Mobile 2**
+- **채널**: **단일 전극** (FP1 위치)
+- **샘플링 속도**: **512Hz**
+- **주파수 범위**: **3Hz-100Hz**
+- **배터리**: AAA 1개, **6-8시간** 작동
+- **정확도**: 연구급 EEG 대비 **96%** 정확도 (제조사 주장) [NCBI](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7593569/)
+- **가격**: **$99-129**
+
+**Muse S (Athena)**
+- **채널**: **7개** EEG 센서 [Muse](https://choosemuse.com/products/muse-s-athena) [Muse](https://choosemuse.com/)
+- **추가 기술**: 혈액 산소화 추적을 위한 fNIRS 센서 [Muse](https://choosemuse.com/products/muse-s-athena) [Muse](https://choosemuse.com/)
+- **특징**: 수면 추적, 야간 EEG 모니터링 [Muse](https://choosemuse.com/products/muse-s-athena)
+- **가격 범위**: **$200-400** (모델에 따라)
+
+### 감정 AI 기업 기술 분석
+
+**Affectiva (SmartEye 인수)**
+- **훈련 데이터**: **1,700만** 얼굴, **90억** 얼굴 프레임 (90개국)
+- **인식 능력**: **7개** 기본 감정 + **2개** 추가 상태
+- **얼굴 액션 유닛**: FACS 기반 **20개 이상** AU
+- **시장 위치**: 포춘 글로벌 500대 기업의 **28%** 사용
+- **인수 가격**: SmartEye가 **$73.5M**에 인수 (2021)
+
+**Beyond Verbal**
+- **데이터 기반**: **250만** 감정 태그 음성 (40개 이상 언어) [MobiHealthNews](https://www.mobihealthnews.com/content/beyond-verbal-launches-api-enable-voice-based-emotion-detection-virtual-private-assistants)
+- **실시간 분석**: 기분/태도 분석을 위한 **10초** 음성 입력 [MobiHealthNews](https://www.mobihealthnews.com/content/beyond-verbal-launches-api-enable-voice-based-emotion-detection-virtual-private-assistants)
+- **총 펀딩**: 여러 라운드에 걸쳐 **$10.8M** 이상 [Wikipedia](https://en.wikipedia.org/wiki/Beyond_Verbal)
+
+### 한국 기업 감정 인식 기술
+
+**Looxid Labs**
+- **접근법**: 아이트래킹 + EEG를 사용한 VR 통합 감정 AI
+- **제품**: LooxidVR - 생체 센서가 있는 모바일 VR 헤드셋
+- **펀딩**: **$4M** 시리즈 A (2018)
+- **상**: CES 2018 Best of Innovation (AR/VR 카테고리)
+
+**ORBIS AI**
+- **다중 모달 인식**: 음성, 얼굴 표정, 복합 분석
+- **인식 범위**: **25개 이상** 미세 감정, **7개** 기본 감정
+- **감정 서술자**: 쾌감도, 지배성, 각성도 차원
+
+## 6. COSMOS 대비 기술적 차이점 및 벤치마킹 지표
+
+### 성능 벤치마킹을 위한 핵심 지표
+
+**정확도 비교 기준**:
+- **최고 성능 EEG 시스템**: DEAP에서 **98.63-98.66%** (SST-CRAM)
+- **실시간 시스템**: **94%** (신경인문학 시스템) [frontiersin](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1319574/full)
+- **주체 독립적**: **73.21-91.04%** 범위 (더 현실적) [Frontiers](https://www.frontiersin.org/journals/psychology/articles/10.3389/fpsyg.2023.1289816/full)
+
+**처리 속도 벤치마킹**:
+- **실시간 임계값**: **50ms 미만** (최적), **100ms 미만** (허용)
+- **EEG 처리**: **5초** 윈도우, **10초 미만** 총 처리
+- **경량 모델**: **10ms 미만** 추론 시간
+
+**비용 효율성 분석**:
+- **소비자 EEG**: **$99** (NeuroSky) - **$999** (Emotiv) [iMotions](https://imotions.com/blog/learning/product-guides/eeg-headset-prices/)
+- **연구급 시스템**: **$1,000-15,000+**
+- **API 서비스**: 사용자당 월 **$50-500**
+
+이 종합 분석은 COSMOS 시스템의 성능을 평가하고 시장 포지셔닝을 결정하는 데 필요한 구체적인 기술 벤치마크와 성능 지표를 제공합니다.
